@@ -127,12 +127,11 @@
 //! So in `ContextScope<'b, 's>`, `'b` is the lifetime of the borrow of the inner scope, and `'s` is the lifetime of the inner scope (and therefore the handles).
 use crate::{
   Context, Data, DataError, Function, FunctionCallbackInfo, Isolate, Local,
-  Message, Object, OwnedIsolate, PromiseRejectMessage, PropertyCallbackInfo,
-  SealedLocal, Value,
+  Locker, Message, Object, OwnedIsolate, PromiseRejectMessage,
+  PropertyCallbackInfo, SealedLocal, Value,
   fast_api::FastApiCallbackOptions,
   isolate::{IsolateAnnex, RealIsolate},
-  support::assert_layout_subset,
-};
+  support::assert_layout_subset,};
 use std::{
   any::type_name,
   cell::Cell,
@@ -282,7 +281,7 @@ mod get_isolate {
 pub(crate) use get_isolate::GetIsolate;
 
 mod get_isolate_impls {
-  use crate::{Promise, PromiseRejectMessage};
+  use crate::{Locker, Promise, PromiseRejectMessage};
 
   use super::*;
   impl GetIsolate for Isolate {
@@ -294,6 +293,14 @@ mod get_isolate_impls {
   impl GetIsolate for OwnedIsolate {
     fn get_isolate_ptr(&self) -> *mut RealIsolate {
       self.as_real_ptr()
+    }
+  }
+
+  impl GetIsolate for Locker<'_> {
+    fn get_isolate_ptr(&self) -> *mut RealIsolate {
+      // Locker derefs to Isolate, which has as_real_ptr()
+      use std::ops::Deref;
+      self.deref().as_real_ptr()
     }
   }
 
@@ -442,6 +449,20 @@ impl<'s> NewHandleScope<'s> for OwnedIsolate {
       raw_handle_scope: unsafe { raw::HandleScope::uninit() },
       isolate: unsafe { NonNull::new_unchecked(me.get_isolate_ptr()) },
       annex: isolate.get_annex_ptr(),
+      context: Cell::new(None),
+      _phantom: PhantomData,
+      _pinned: PhantomPinned,
+    }
+  }
+}
+
+impl<'s, 'a: 's> NewHandleScope<'s> for Locker<'a> {
+  type NewScope = HandleScope<'s, ()>;
+
+  fn make_new_scope(me: &'s mut Self) -> Self::NewScope {
+    HandleScope {
+      raw_handle_scope: unsafe { raw::HandleScope::uninit() },
+      isolate: unsafe { NonNull::new_unchecked(me.get_isolate_ptr()) },
       context: Cell::new(None),
       _phantom: PhantomData,
       _pinned: PhantomPinned,
