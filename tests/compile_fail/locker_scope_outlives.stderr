@@ -1,7 +1,7 @@
 error[E0597]: `locker` does not live long enough
   --> tests/compile_fail/locker_scope_outlives.rs:10:45
    |
-9  |     let mut locker = v8::Locker::new(&mut isolate);
+ 9 |     let mut locker = v8::Locker::new(&mut isolate);
    |         ---------- binding `locker` declared here
 10 |     scope = pin!(v8::HandleScope::new(&mut *locker));
    |                                             ^^^^^^ borrowed value does not live long enough
