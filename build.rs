@@ -661,8 +661,6 @@ fn download_file(url: &str, filename: &Path) {
          const file = await Deno.open(path, { write: true, create: true }); \
          await resp.body.pipeTo(file.writable);",
       )
-      .arg("--allow-net")
-      .arg("--allow-write")
       .arg("--")
       .arg(url)
       .arg(&tmpfile)
