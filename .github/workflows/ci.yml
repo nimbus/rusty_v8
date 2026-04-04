@@ -18,10 +18,6 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - os: macos-15-intel
-            target: x86_64-apple-darwin
-            cargo: cargo
-
           - os: macos-15
             target: aarch64-apple-darwin
             cargo: cargo
