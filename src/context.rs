@@ -311,6 +311,40 @@ impl Context {
     }
   }
 
+  /// Detaches the internal annex slot without eagerly dropping the
+  /// [`ContextAnnex`]. The embedder data pointer is nulled so no future
+  /// code can read a stale annex reference, but the annex itself (and its
+  /// [`Weak<Context>`] handle) are left alive for V8's garbage collector
+  /// to clean up via the weak handle's guaranteed finalizer.
+  ///
+  /// Use this instead of [`clear_all_slots`] when destroying a context
+  /// that will be replaced on the same isolate (e.g. during
+  /// `reset_main_realm`). Eagerly dropping the annex in that scenario
+  /// causes V8 heap corruption because the `Weak::Drop` →
+  /// `v8__Global__Reset` interaction during realm destruction can leave
+  /// V8's internal handle tracking inconsistent for contexts created
+  /// from [`Context::from_snapshot`].
+  ///
+  /// For isolate disposal and snapshotting, use [`clear_all_slots`]
+  /// instead — it eagerly drops the `Weak` handle, which is required
+  /// because weak finalizers may not fire during isolate disposal.
+  #[inline(always)]
+  pub fn detach_all_slots(&self) {
+    if self.get_annex_mut(false).is_some() {
+      // Null the slot so no future code reads a stale annex pointer.
+      // The ContextAnnex and its Weak<Context> are intentionally NOT
+      // dropped — V8's GC will collect the context and the weak
+      // finalizer will clean up the annex.
+      unsafe {
+        v8__Context__SetAlignedPointerInEmbedderData(
+          self,
+          Self::ANNEX_SLOT,
+          null_mut(),
+        );
+      };
+    }
+  }
+
   /// Sets the embedder data with the given index, growing the data as needed.
   ///
   /// Note that index 0 currently has a special meaning for Chrome's debugger.
