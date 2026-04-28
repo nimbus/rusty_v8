@@ -463,6 +463,7 @@ impl<'s, 'a: 's> NewHandleScope<'s> for Locker<'a> {
     HandleScope {
       raw_handle_scope: unsafe { raw::HandleScope::uninit() },
       isolate: unsafe { NonNull::new_unchecked(me.get_isolate_ptr()) },
+      annex: me.get_annex_ptr(),
       context: Cell::new(None),
       _phantom: PhantomData,
       _pinned: PhantomPinned,
