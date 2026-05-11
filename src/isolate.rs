@@ -1,4 +1,32 @@
 // Copyright 2019-2021 the Deno authors. All rights reserved. MIT license.
+use crate::binding::v8__HeapCodeStatistics;
+use crate::binding::v8__HeapSpaceStatistics;
+use crate::binding::v8__HeapStatistics;
+use crate::binding::v8__Isolate__UseCounterFeature;
+pub use crate::binding::v8__ModuleImportPhase as ModuleImportPhase;
+use crate::cppgc::Heap;
+use crate::external_references::ExternalReference;
+use crate::function::FunctionCallbackInfo;
+use crate::gc::GCCallbackFlags;
+use crate::gc::GCType;
+use crate::handle::clear_weak_data_handle_for_dispose;
+use crate::handle::FinalizerCallback;
+use crate::handle::FinalizerMap;
+use crate::handle::WeakDataErased;
+use crate::isolate_create_params::raw;
+use crate::isolate_create_params::CreateParams;
+use crate::promise::PromiseRejectMessage;
+use crate::snapshot::SnapshotCreator;
+use crate::support::char;
+use crate::support::int;
+use crate::support::size_t;
+use crate::support::MapFnFrom;
+use crate::support::MapFnTo;
+use crate::support::Opaque;
+use crate::support::ToCFn;
+use crate::support::UnitType;
+use crate::wasm::trampoline;
+use crate::wasm::WasmStreaming;
 use crate::Array;
 use crate::CallbackScope;
 use crate::Context;
@@ -16,34 +44,8 @@ use crate::Promise;
 use crate::PromiseResolver;
 use crate::StartupData;
 use crate::String;
-use crate::V8::get_current_platform;
 use crate::Value;
-use crate::binding::v8__HeapCodeStatistics;
-use crate::binding::v8__HeapSpaceStatistics;
-use crate::binding::v8__HeapStatistics;
-use crate::binding::v8__Isolate__UseCounterFeature;
-pub use crate::binding::v8__ModuleImportPhase as ModuleImportPhase;
-use crate::cppgc::Heap;
-use crate::external_references::ExternalReference;
-use crate::function::FunctionCallbackInfo;
-use crate::gc::GCCallbackFlags;
-use crate::gc::GCType;
-use crate::handle::FinalizerCallback;
-use crate::handle::FinalizerMap;
-use crate::isolate_create_params::CreateParams;
-use crate::isolate_create_params::raw;
-use crate::promise::PromiseRejectMessage;
-use crate::snapshot::SnapshotCreator;
-use crate::support::MapFnFrom;
-use crate::support::MapFnTo;
-use crate::support::Opaque;
-use crate::support::ToCFn;
-use crate::support::UnitType;
-use crate::support::char;
-use crate::support::int;
-use crate::support::size_t;
-use crate::wasm::WasmStreaming;
-use crate::wasm::trampoline;
+use crate::V8::get_current_platform;
 use std::cell::UnsafeCell;
 use std::ffi::CStr;
 
@@ -55,19 +57,19 @@ use std::ffi::c_void;
 use std::fmt::{self, Debug, Formatter};
 use std::hash::BuildHasher;
 use std::hash::Hasher;
-use std::mem::MaybeUninit;
 use std::mem::align_of;
 use std::mem::forget;
 use std::mem::needs_drop;
 use std::mem::size_of;
+use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::ops::DerefMut;
 use std::pin::pin;
 use std::ptr;
-use std::ptr::NonNull;
 use std::ptr::addr_of_mut;
 use std::ptr::drop_in_place;
 use std::ptr::null_mut;
+use std::ptr::NonNull;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicPtr;
@@ -1058,6 +1060,15 @@ impl Isolate {
     // `get_annex()`. An outer `&mut IsolateAnnex` held across that
     // re-entry would alias the shared borrow they obtain.
 
+    // Reset any still-live weak handles while the isolate is valid so V8
+    // cannot deliver a late first-pass callback against freed bookkeeping, and
+    // later `Weak::drop` calls never have to touch a torn-down isolate.
+    let active_weak_data =
+      unsafe { std::mem::take(&mut (*annex_ptr).active_weak_data) };
+    for weak_data in active_weak_data {
+      unsafe { clear_weak_data_handle_for_dispose(weak_data) };
+    }
+
     // SAFETY: `annex_ptr` is non-null and points at a live `IsolateAnnex`
     // (ANNEX_SLOT is only cleared by code further down this teardown
     // path).
@@ -1186,6 +1197,26 @@ impl Isolate {
 
   pub(crate) fn get_finalizer_map_mut(&mut self) -> &mut FinalizerMap {
     &mut self.get_annex_mut().finalizer_map
+  }
+
+  pub(crate) fn register_active_weak_data(
+    &mut self,
+    weak_data: std::ptr::NonNull<WeakDataErased>,
+  ) {
+    self.get_annex_mut().active_weak_data.push(weak_data);
+  }
+
+  pub(crate) fn unregister_active_weak_data(
+    &mut self,
+    weak_data: std::ptr::NonNull<WeakDataErased>,
+  ) {
+    let active_weak_data = &mut self.get_annex_mut().active_weak_data;
+    if let Some(index) = active_weak_data
+      .iter()
+      .position(|entry| *entry == weak_data)
+    {
+      active_weak_data.swap_remove(index);
+    }
   }
 
   /// Retrieve embedder-specific data from the isolate.
@@ -2066,6 +2097,7 @@ pub(crate) struct IsolateAnnex {
   create_param_allocations: Option<Box<dyn Any>>,
   slots: HashMap<TypeId, RawSlot, BuildTypeIdHasher>,
   finalizer_map: FinalizerMap,
+  active_weak_data: Vec<std::ptr::NonNull<WeakDataErased>>,
   maybe_snapshot_creator: Option<SnapshotCreator>,
   isolate_handle: IsolateHandle,
   global_liveness: NonNull<IsolateLiveness>,
@@ -2081,6 +2113,7 @@ impl IsolateAnnex {
       create_param_allocations: Some(create_param_allocations),
       slots: HashMap::default(),
       finalizer_map: FinalizerMap::default(),
+      active_weak_data: Vec::new(),
       maybe_snapshot_creator: None,
       isolate_handle: IsolateHandle::new(isolate),
       global_liveness: NonNull::from(global_liveness),
