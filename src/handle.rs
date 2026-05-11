@@ -9,13 +9,13 @@ use std::mem::transmute;
 use std::ops::Deref;
 use std::ptr::NonNull;
 
+use crate::Data;
+use crate::Isolate;
+use crate::IsolateHandle;
 use crate::isolate::RealIsolate;
 use crate::scope::GetIsolate;
 use crate::scope::PinScope;
 use crate::support::Opaque;
-use crate::Data;
-use crate::Isolate;
-use crate::IsolateHandle;
 
 unsafe extern "C" {
   fn v8__Local__New(
@@ -1105,10 +1105,39 @@ pub(crate) struct WeakDataErased {
   weak_dropped: Cell<bool>,
 }
 
+const _: () = {
+  if std::mem::size_of::<WeakData<Data>>()
+    != std::mem::size_of::<WeakDataErased>()
+  {
+    panic!("WeakDataErased must have the same size as WeakData<Data>");
+  }
+  if std::mem::align_of::<WeakData<Data>>()
+    != std::mem::align_of::<WeakDataErased>()
+  {
+    panic!("WeakDataErased must have the same alignment as WeakData<Data>");
+  }
+  if std::mem::offset_of!(WeakData<Data>, pointer)
+    != std::mem::offset_of!(WeakDataErased, pointer)
+  {
+    panic!("WeakDataErased pointer offset must match WeakData<Data>");
+  }
+  if std::mem::offset_of!(WeakData<Data>, finalizer_id)
+    != std::mem::offset_of!(WeakDataErased, finalizer_id)
+  {
+    panic!("WeakDataErased finalizer_id offset must match WeakData<Data>");
+  }
+  if std::mem::offset_of!(WeakData<Data>, weak_dropped)
+    != std::mem::offset_of!(WeakDataErased, weak_dropped)
+  {
+    panic!("WeakDataErased weak_dropped offset must match WeakData<Data>");
+  }
+};
+
 impl<T> WeakData<T> {
   fn as_erased_non_null(&self) -> NonNull<WeakDataErased> {
-    // SAFETY: `WeakData<T>` and `WeakDataErased` have identical `repr(C)`
-    // layouts; only the pointee phantom type differs.
+    // SAFETY: The const assertion above guards the erased layout used by the
+    // isolate teardown registry. `T` only changes the pointee type of a thin
+    // non-null pointer.
     unsafe {
       NonNull::new_unchecked(self as *const WeakData<T> as *mut WeakDataErased)
     }

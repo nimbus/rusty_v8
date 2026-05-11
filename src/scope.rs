@@ -131,7 +131,8 @@ use crate::{
   PropertyCallbackInfo, SealedLocal, Value,
   fast_api::FastApiCallbackOptions,
   isolate::{IsolateAnnex, RealIsolate},
-  support::assert_layout_subset,};
+  support::assert_layout_subset,
+};
 use std::{
   any::type_name,
   cell::Cell,
