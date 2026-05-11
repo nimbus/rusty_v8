@@ -9,14 +9,14 @@ use std::mem::transmute;
 use std::ops::Deref;
 use std::ptr::NonNull;
 
-use crate::Data;
-use crate::Isolate;
-use crate::IsolateHandle;
 use crate::isolate::IsolateLiveness;
 use crate::isolate::RealIsolate;
 use crate::scope::GetIsolate;
 use crate::scope::PinScope;
 use crate::support::Opaque;
+use crate::Data;
+use crate::Isolate;
+use crate::IsolateHandle;
 
 unsafe extern "C" {
   fn v8__Local__New(
@@ -759,6 +759,9 @@ impl<T> Weak<T> {
     weak_data
       .pointer
       .set(Some(unsafe { NonNull::new_unchecked(data as *mut _) }));
+    unsafe {
+      (*isolate).register_active_weak_data(weak_data.as_erased_non_null());
+    }
     Self {
       data: Some(weak_data),
       isolate_handle: unsafe { (*isolate).thread_safe_handle() },
@@ -932,6 +935,9 @@ impl<T> Weak<T> {
     };
 
     let data = weak_data.pointer.take().unwrap();
+    let isolate = unsafe { v8__WeakCallbackInfo__GetIsolate(wci) };
+    let mut isolate = unsafe { Isolate::from_raw_ptr(isolate) };
+    isolate.unregister_active_weak_data(weak_data.as_erased_non_null());
     unsafe {
       v8__Global__Reset(data.cast().as_ptr());
     }
@@ -1007,18 +1013,32 @@ impl<T> Drop for Weak<T> {
       false
     };
 
-    if let Some(data) =
-      self.data.as_ref().and_then(|weak_data| weak_data.pointer.get())
+    if let Some((data, finalizer_id, erased_weak_data)) =
+      self.data.as_ref().and_then(|weak_data| {
+        weak_data.pointer.get().map(|data| {
+          (data, weak_data.finalizer_id, weak_data.as_erased_non_null())
+        })
+      })
     {
-      // `get_pointer()` intentionally hides the raw handle once the isolate
-      // pointer goes null so regular API calls don't touch a torn-down
-      // isolate. Drop still has to reset the weak handle even during isolate
-      // teardown, otherwise V8 can deliver a late first-pass callback against
-      // freed WeakData.
+      let isolate_ptr = unsafe { self.isolate_handle.get_isolate_ptr() };
+      if isolate_ptr.is_null() {
+        // `dispose_annex()` should have cleared any live weak handles before
+        // the isolate pointer was torn down. If we still observe one here,
+        // leaking the bookkeeping is safer than touching a dead isolate or
+        // freeing memory V8 could still callback against.
+        if let Some(weak_data) = self.data.take() {
+          weak_data.weak_dropped.set(true);
+          Box::leak(weak_data);
+        }
+        return;
+      }
+
       // If the pointer is not None, the first pass callback hasn't been
       // called yet, and resetting will prevent it from being called.
       unsafe { v8__Global__Reset(data.cast().as_ptr()) };
-      remove_finalizer(self.data.as_ref().unwrap().finalizer_id);
+      let mut isolate = unsafe { Isolate::from_raw_ptr(isolate_ptr) };
+      isolate.unregister_active_weak_data(erased_weak_data);
+      remove_finalizer(finalizer_id);
     } else if let Some(weak_data) = self.data.take() {
       // The second pass callback removes the finalizer, so if there is one,
       // the second pass hasn't yet run, and WeakData will have to be alive.
@@ -1079,10 +1099,39 @@ where
 /// can be accessed by the finalization callbacks by creating a shared reference
 /// from a pointer. The fields are wrapped in [`Cell`] so they are modifiable by
 /// both the [`Weak`] and the finalization callbacks.
+#[repr(C)]
 pub struct WeakData<T> {
   pointer: Cell<Option<NonNull<T>>>,
   finalizer_id: Option<FinalizerId>,
   weak_dropped: Cell<bool>,
+}
+
+#[repr(C)]
+pub(crate) struct WeakDataErased {
+  pointer: Cell<Option<NonNull<c_void>>>,
+  finalizer_id: Option<FinalizerId>,
+  weak_dropped: Cell<bool>,
+}
+
+impl<T> WeakData<T> {
+  fn as_erased_non_null(&self) -> NonNull<WeakDataErased> {
+    // SAFETY: `WeakData<T>` and `WeakDataErased` have identical `repr(C)`
+    // layouts; only the pointee phantom type differs.
+    unsafe {
+      NonNull::new_unchecked(self as *const WeakData<T> as *mut WeakDataErased)
+    }
+  }
+}
+
+pub(crate) unsafe fn clear_weak_data_handle_for_dispose(
+  weak_data: NonNull<WeakDataErased>,
+) {
+  let weak_data = unsafe { weak_data.as_ref() };
+  if let Some(data) = weak_data.pointer.take() {
+    unsafe {
+      v8__Global__Reset(data.as_ptr() as *const Data);
+    }
+  }
 }
 
 impl<T> std::fmt::Debug for WeakData<T> {
