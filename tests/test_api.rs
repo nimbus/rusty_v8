@@ -11170,6 +11170,38 @@ fn isolate_slot_drop_can_access_annex_during_teardown() {
 }
 
 #[test]
+fn leaked_raw_weak_handle_survives_isolate_teardown() {
+  use std::cell::Cell;
+  use std::rc::Rc;
+
+  let _setup_guard = setup::parallel_test();
+
+  let guaranteed_finalized = Rc::new(Cell::new(false));
+
+  {
+    let isolate = &mut v8::Isolate::new(Default::default());
+    v8::scope!(let scope, isolate);
+
+    let context = v8::Context::new(scope, Default::default());
+    let scope = &mut v8::ContextScope::new(scope, context);
+
+    let object = v8::Object::new(scope);
+    let weak = v8::Weak::with_guaranteed_finalizer(
+      scope,
+      object,
+      Box::new({
+        let guaranteed_finalized = guaranteed_finalized.clone();
+        move || guaranteed_finalized.set(true)
+      }),
+    );
+
+    assert!(weak.into_raw().is_some());
+  }
+
+  assert!(guaranteed_finalized.get());
+}
+
+#[test]
 fn isolate_data_slots() {
   let _setup_guard = setup::parallel_test();
   let mut isolate = v8::Isolate::new(Default::default());
