@@ -999,7 +999,14 @@ impl<T> Drop for Weak<T> {
       false
     };
 
-    if let Some(data) = self.get_pointer() {
+    if let Some(data) =
+      self.data.as_ref().and_then(|weak_data| weak_data.pointer.get())
+    {
+      // `get_pointer()` intentionally hides the raw handle once the isolate
+      // pointer goes null so regular API calls don't touch a torn-down
+      // isolate. Drop still has to reset the weak handle even during isolate
+      // teardown, otherwise V8 can deliver a late first-pass callback against
+      // freed WeakData.
       // If the pointer is not None, the first pass callback hasn't been
       // called yet, and resetting will prevent it from being called.
       unsafe { v8__Global__Reset(data.cast().as_ptr()) };
