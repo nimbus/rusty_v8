@@ -7,7 +7,8 @@ on:
   pull_request:
     branches: [locker-v147, locker-v147.4.0]
 
-permissions: write-all
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -111,8 +112,8 @@ jobs:
             target/*/.*
             target/*/build
             target/*/deps
-          key: cargo1-${{ matrix.config.target }}-release-${{ hashFiles('Cargo.lock', 'build.rs', 'git_submodule_status.txt') }}
-          restore-keys: cargo1-${{ matrix.config.target }}-release-
+          key: cargo2-${{ matrix.config.target }}-release-${{ hashFiles('Cargo.lock', 'build.rs', 'git_submodule_status.txt') }}
+          restore-keys: cargo2-${{ matrix.config.target }}-release-
 
       - name: Install and start sccache
         shell: pwsh
@@ -181,13 +182,24 @@ jobs:
           ls -l target/src_binding_simdutf_release_${{ matrix.config.target }}.rs
 
       - name: Binary publish
-        uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          files: |
-            target/${{ env.LIB_NAME }}_release_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz
-            target/src_binding_release_${{ matrix.config.target }}.rs
-            target/${{ env.LIB_NAME }}_simdutf_release_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$GITHUB_REF_NAME" \
+              --notes "rusty_v8 $GITHUB_REF_NAME" \
+              --verify-tag \
+              || gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null
+          fi
+          gh release upload "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber \
+            target/${{ env.LIB_NAME }}_release_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz \
+            target/src_binding_release_${{ matrix.config.target }}.rs \
+            target/${{ env.LIB_NAME }}_simdutf_release_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz \
             target/src_binding_simdutf_release_${{ matrix.config.target }}.rs
