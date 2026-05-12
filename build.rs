@@ -586,7 +586,7 @@ fn static_lib_url() -> String {
     return custom_archive;
   }
   let default_base =
-    "https://github.com/agentstation/rusty_v8/releases/download";
+    "https://github.com/nimbus/rusty_v8/releases/download";
   let base =
     env::var("RUSTY_V8_MIRROR").unwrap_or_else(|_| default_base.into());
   let version = env::var("RUSTY_V8_VERSION")
@@ -892,7 +892,7 @@ fn print_prebuilt_src_binding_path() {
   let src_binding_path = get_dirs().root.join("gen").join(name.clone());
 
   let default_base =
-    "https://github.com/agentstation/rusty_v8/releases/download";
+    "https://github.com/nimbus/rusty_v8/releases/download";
   let base =
     env::var("RUSTY_V8_MIRROR").unwrap_or_else(|_| default_base.into());
   let version = env::var("RUSTY_V8_VERSION")
