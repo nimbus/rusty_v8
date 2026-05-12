@@ -579,7 +579,8 @@ fn static_lib_url() -> String {
   if let Ok(custom_archive) = env::var("RUSTY_V8_ARCHIVE") {
     return custom_archive;
   }
-  let default_base = "https://github.com/denoland/rusty_v8/releases/download";
+  let default_base =
+    "https://github.com/nimbus/rusty_v8/releases/download";
   let base =
     env::var("RUSTY_V8_MIRROR").unwrap_or_else(|_| default_base.into());
   let version = env::var("CARGO_PKG_VERSION").unwrap();
@@ -883,8 +884,13 @@ fn print_prebuilt_src_binding_path() {
 
   let src_binding_path = get_dirs().root.join("gen").join(name.clone());
 
-  if let Ok(base) = env::var("RUSTY_V8_MIRROR") {
-    let version = env::var("CARGO_PKG_VERSION").unwrap();
+  let default_base =
+    "https://github.com/nimbus/rusty_v8/releases/download";
+  let base =
+    env::var("RUSTY_V8_MIRROR").unwrap_or_else(|_| default_base.into());
+  let version = env::var("RUSTY_V8_VERSION")
+    .unwrap_or_else(|_| env::var("CARGO_PKG_VERSION").unwrap());
+  if !src_binding_path.exists() {
     let url = format!("{base}/v{version}/{name}");
     download_file(&url, &src_binding_path);
   }
