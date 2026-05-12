@@ -35,7 +35,7 @@ jobs:
             cargo: cargo
 
       # x86_64-apple-darwin is intentionally omitted for now.
-      # Neovex does not currently ship Intel Mac support, and this target adds
+      # Nimbus does not currently ship Intel Mac support, and this target adds
       # substantial CI time. Re-enable when release-build budget or platform
       # support priorities change.
 
@@ -55,6 +55,16 @@ jobs:
         with:
           fetch-depth: 10
           submodules: recursive
+
+      - name: Configure googlesource credentials
+        if: env.GOOGLESOURCE_COOKIE != ''
+        env:
+          GOOGLESOURCE_COOKIE: ${{ secrets.GOOGLESOURCE_COOKIE }}
+        run: |
+          touch ~/.gitcookies && chmod 0600 ~/.gitcookies
+          git config --global http.cookiefile ~/.gitcookies
+          echo ".googlesource.com	TRUE	/	TRUE	2147483647	o	${GOOGLESOURCE_COOKIE}" >> ~/.gitcookies
+          git config --global url."https://chromium.googlesource.com/a/".insteadOf "https://chromium.googlesource.com/"
 
       - name: Install rust
         uses: dsherret/rust-toolchain-file@v1
