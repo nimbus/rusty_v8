@@ -105,6 +105,7 @@ jobs:
         run: git submodule status --recursive > git_submodule_status.txt
 
       - name: Cache
+        if: matrix.config.target != 'aarch64-apple-darwin'
         uses: actions/cache@v5
         with:
           path: |-
@@ -112,8 +113,8 @@ jobs:
             target/*/.*
             target/*/build
             target/*/deps
-          key: cargo2-${{ matrix.config.target }}-release-${{ hashFiles('Cargo.lock', 'build.rs', 'git_submodule_status.txt') }}
-          restore-keys: cargo2-${{ matrix.config.target }}-release-
+          key: cargo1-${{ matrix.config.target }}-release-${{ hashFiles('Cargo.lock', 'build.rs', 'git_submodule_status.txt') }}
+          restore-keys: cargo1-${{ matrix.config.target }}-release-
 
       - name: Install and start sccache
         shell: pwsh
