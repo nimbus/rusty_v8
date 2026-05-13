@@ -45,6 +45,9 @@ jobs:
       CARGO_VARIANT_FLAG: "--release"
       LIB_NAME: ${{ contains(matrix.config.target, 'windows') && 'rusty_v8' || 'librusty_v8' }}
       LIB_EXT: ${{ contains(matrix.config.target, 'windows') && 'lib' || 'a' }}
+      PIP_CACHE_DIR: ${{ runner.temp }}/pip-cache
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PIP_NO_CACHE_DIR: "1"
       RUSTFLAGS: -D warnings
 
     steps:
@@ -83,6 +86,10 @@ jobs:
         with:
           python-version: 3.11.x
           architecture: x64
+
+      - name: Clear Python package cache
+        if: startsWith(matrix.config.os, 'macos')
+        run: python -m pip cache purge || true
 
       - name: Install cross compilation toolchain
         if: matrix.config.target == 'aarch64-unknown-linux-gnu'
