@@ -45,7 +45,6 @@ jobs:
       CARGO_VARIANT_FLAG: "--release"
       LIB_NAME: ${{ contains(matrix.config.target, 'windows') && 'rusty_v8' || 'librusty_v8' }}
       LIB_EXT: ${{ contains(matrix.config.target, 'windows') && 'lib' || 'a' }}
-      PIP_CACHE_DIR: ${{ runner.temp }}/pip-cache
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
       PIP_NO_CACHE_DIR: "1"
       RUSTFLAGS: -D warnings
