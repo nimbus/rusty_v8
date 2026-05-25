@@ -2,192 +2,51 @@ name: ci
 
 on:
   push:
-    branches: [main]
-    tags: ["**"]
+    branches: [nimbus/v149.0.0]
+    tags: ["v*"]
   pull_request:
-    branches: [main]
-    types: [labeled, opened, synchronize, reopened]
+    branches: [nimbus/v149.0.0]
 
-permissions: write-all
+permissions:
+  contents: write
 
 jobs:
   build:
-    name: ${{ matrix.config.variant }} ${{ matrix.config.target }} ${{ matrix.config.v8_enable_pointer_compression && 'ptrcomp' || '' }} ${{ matrix.config.simdutf && 'simdutf' || '' }}
+    name: release ${{ matrix.config.target }}
     runs-on: ${{ matrix.config.os }}
     timeout-minutes: 180
     strategy:
-      # Always run main branch builds to completion. This allows the cache to
-      # stay mostly up-to-date in situations where a single job fails due to
-      # e.g. a flaky test.
-      # Don't fast-fail on tag build because publishing binaries shouldn't be
-      # prevented if 'cargo publish' fails (which can be a false negative).
-      fail-fast:
-        ${{ (github.event_name == 'pull_request' || (github.ref !=
-        'refs/heads/main' && !startsWith(github.ref, 'refs/tags/'))) &&
-        !contains(github.event.pull_request.labels.*.name, 'no-fail-fast') }}
+      fail-fast: false
       matrix:
         config:
-          - os: macos-15-large
-            target: x86_64-apple-darwin
-            variant: debug
-            v8_enable_pointer_compression: false
-            cargo: cargo
-
-          - os: macos-15-large
-            target: x86_64-apple-darwin
-            variant: release
-            v8_enable_pointer_compression: false
-            cargo: cargo
-
-          - os: macos-15-large
-            target: x86_64-apple-darwin
-            variant: debug
-            v8_enable_pointer_compression: true
-            cargo: cargo
-
-          - os: macos-15-large
-            target: x86_64-apple-darwin
-            variant: release
-            v8_enable_pointer_compression: true
-            cargo: cargo
-
           - os: macos-15
             target: aarch64-apple-darwin
-            variant: debug
-            v8_enable_pointer_compression: false
             cargo: cargo
 
-          - os: macos-15
-            target: aarch64-apple-darwin
-            variant: release
-            v8_enable_pointer_compression: false
-            cargo: cargo
-
-          - os: macos-15
-            target: aarch64-apple-darwin
-            variant: debug
-            v8_enable_pointer_compression: true
-            cargo: cargo
-
-          - os: macos-15
-            target: aarch64-apple-darwin
-            variant: release
-            v8_enable_pointer_compression: true
-            cargo: cargo
-
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            variant: debug
-            v8_enable_pointer_compression: false
             cargo: cargo
 
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
-            target: x86_64-unknown-linux-gnu
-            variant: release
-            v8_enable_pointer_compression: false
+          - os: ubuntu-22.04
+            target: aarch64-unknown-linux-gnu
             cargo: cargo
 
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
-            target: x86_64-unknown-linux-gnu
-            variant: debug
-            v8_enable_pointer_compression: true
-            cargo: cargo
-
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
-            target: x86_64-unknown-linux-gnu
-            variant: release
-            v8_enable_pointer_compression: true
-            cargo: cargo
-
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'windows-2022-xxl' || 'windows-2022' }}
+          - os: windows-2022
             target: x86_64-pc-windows-msvc
-            variant: release # Note: we do not support windows debug builds.
-            v8_enable_pointer_compression: false
             cargo: cargo
 
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
-            target: aarch64-unknown-linux-gnu
-            variant: debug
-            v8_enable_pointer_compression: false
-            cargo: cargo
-
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
-            target: aarch64-unknown-linux-gnu
-            variant: release
-            v8_enable_pointer_compression: false
-            cargo: cargo
-
-          # simdutf builds
-          - os: macos-15-large
-            target: x86_64-apple-darwin
-            variant: debug
-            v8_enable_pointer_compression: false
-            simdutf: true
-            cargo: cargo
-
-          - os: macos-15-large
-            target: x86_64-apple-darwin
-            variant: release
-            v8_enable_pointer_compression: false
-            simdutf: true
-            cargo: cargo
-
-          - os: macos-15
-            target: aarch64-apple-darwin
-            variant: debug
-            v8_enable_pointer_compression: false
-            simdutf: true
-            cargo: cargo
-
-          - os: macos-15
-            target: aarch64-apple-darwin
-            variant: release
-            v8_enable_pointer_compression: false
-            simdutf: true
-            cargo: cargo
-
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
-            target: x86_64-unknown-linux-gnu
-            variant: debug
-            v8_enable_pointer_compression: false
-            simdutf: true
-            cargo: cargo
-
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
-            target: x86_64-unknown-linux-gnu
-            variant: release
-            v8_enable_pointer_compression: false
-            simdutf: true
-            cargo: cargo
-
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
-            target: aarch64-unknown-linux-gnu
-            variant: debug
-            v8_enable_pointer_compression: false
-            simdutf: true
-            cargo: cargo
-
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
-            target: aarch64-unknown-linux-gnu
-            variant: release
-            v8_enable_pointer_compression: false
-            simdutf: true
-            cargo: cargo
-
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'windows-2022-xxl' || 'windows-2022' }}
-            target: x86_64-pc-windows-msvc
-            variant: release # Note: we do not support windows debug builds.
-            v8_enable_pointer_compression: false
-            simdutf: true
-            cargo: cargo
+      # x86_64-apple-darwin is intentionally omitted for now.
+      # Nimbus does not currently ship Intel Mac support, and this target adds
+      # substantial CI time. Re-enable when release-build budget or platform
+      # support priorities change.
 
     env:
       V8_FROM_SOURCE: true
-      CARGO_VARIANT_FLAG: ${{ matrix.config.variant == 'release' && '--release' || '' }}
-      CARGO_FEATURE_FLAGS: ${{ format('{0} {1}', matrix.config.v8_enable_pointer_compression && '--features v8_enable_pointer_compression' || '', matrix.config.simdutf && '--features simdutf' || '') }}
+      CARGO_VARIANT_FLAG: "--release"
       LIB_NAME: ${{ contains(matrix.config.target, 'windows') && 'rusty_v8' || 'librusty_v8' }}
       LIB_EXT: ${{ contains(matrix.config.target, 'windows') && 'lib' || 'a' }}
-      FEATURES_SUFFIX: ${{ format('{0}{1}', matrix.config.v8_enable_pointer_compression && '_ptrcomp' || '', matrix.config.simdutf && '_simdutf' || '') }}
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PIP_NO_CACHE_DIR: "1"
       RUSTFLAGS: -D warnings
 
     steps:
@@ -195,10 +54,20 @@ jobs:
         run: git config --global core.symlinks true
 
       - name: Clone repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 10
           submodules: recursive
+
+      - name: Configure googlesource credentials
+        if: env.GOOGLESOURCE_COOKIE != ''
+        env:
+          GOOGLESOURCE_COOKIE: ${{ secrets.GOOGLESOURCE_COOKIE }}
+        run: |
+          touch ~/.gitcookies && chmod 0600 ~/.gitcookies
+          git config --global http.cookiefile ~/.gitcookies
+          echo ".googlesource.com	TRUE	/	TRUE	2147483647	o	${GOOGLESOURCE_COOKIE}" >> ~/.gitcookies
+          git config --global url."https://chromium.googlesource.com/a/".insteadOf "https://chromium.googlesource.com/"
 
       - name: Install rust
         uses: dsherret/rust-toolchain-file@v1
@@ -212,10 +81,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: 3.11.x
           architecture: x64
+
+      - name: Clear Python package cache
+        if: startsWith(matrix.config.os, 'macos')
+        run: python -m pip cache purge || true
 
       - name: Install cross compilation toolchain
         if: matrix.config.target == 'aarch64-unknown-linux-gnu'
@@ -238,21 +111,16 @@ jobs:
         run: git submodule status --recursive > git_submodule_status.txt
 
       - name: Cache
-        uses: actions/cache@v4
+        if: matrix.config.target != 'aarch64-apple-darwin'
+        uses: actions/cache@v5
         with:
-          # Note: rusty_v8 targets always get get rebuilt, and their outputs
-          # ('librusty_v8.rlib', the whole 'gn_out' directory, etc.) can be
-          # quite big, so we cache only those subdirectories of
-          # target/{debug|release} that contain the build output for crates that
-          # come from the registry. By additionally saving the sccache cache
-          # directory it's still possible to build v8 fast.
           path: |-
             target/sccache
             target/*/.*
             target/*/build
             target/*/deps
-          key: cargo1-${{ matrix.config.target }}-${{ matrix.config.variant }}-${{ matrix.config.v8_enable_pointer_compression }}-${{ matrix.config.simdutf }}-${{ hashFiles('Cargo.lock', 'build.rs', 'git_submodule_status.txt') }}
-          restore-keys: cargo1-${{ matrix.config.target }}-${{ matrix.config.variant }}-${{ matrix.config.v8_enable_pointer_compression }}-
+          key: cargo1-${{ matrix.config.target }}-release-${{ hashFiles('Cargo.lock', 'build.rs', 'git_submodule_status.txt') }}
+          restore-keys: cargo1-${{ matrix.config.target }}-release-
 
       - name: Install and start sccache
         shell: pwsh
@@ -293,386 +161,52 @@ jobs:
           XCODE_CLANG_LIB="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib"
           echo "LIBCLANG_PATH=$XCODE_CLANG_LIB" >> $GITHUB_ENV
 
-      - name: check rust code formatting
-        run: cargo fmt --check
-
-      - name: check c++ code formatting
-        if: startsWith(matrix.config.os, 'ubuntu')
-        run: |
-          clang-format-19 --verbose --Werror --dry-run src/*.cc src/*.hpp src/*.h
-
       - name: Test
         env:
           SCCACHE_IDLE_TIMEOUT: 0
-        if: matrix.config.variant == 'debug' || matrix.config.variant == 'release'
-        run: ${{ matrix.config.cargo }} nextest run -v --cargo-verbose --cargo-verbose --all-targets --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} ${{ env.CARGO_FEATURE_FLAGS }}
+        run: ${{ matrix.config.cargo }} nextest run -v --cargo-verbose --cargo-verbose --all-targets --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }}
 
       - name: Clippy
-        run: ${{ matrix.config.cargo }} clippy --all-targets --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} ${{ env.CARGO_FEATURE_FLAGS }} -- -D clippy::all
+        run: ${{ matrix.config.cargo }} clippy --all-targets --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} -- -D clippy::all
 
-      - name: Prepare binary publish
-        if: matrix.config.variant == 'debug' || matrix.config.variant == 'release'
+      - name: Prepare default binary publish
         run: |
-          gzip -9c target/${{ matrix.config.target }}/${{ matrix.config.variant }}/gn_out/obj/${{ env.LIB_NAME }}.${{ env.LIB_EXT }} > target/${{ env.LIB_NAME }}${{ env.FEATURES_SUFFIX }}_${{ matrix.config.variant }}_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz
-          ls -l target/${{ env.LIB_NAME }}${{ env.FEATURES_SUFFIX }}_${{ matrix.config.variant }}_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz
+          gzip -9c target/${{ matrix.config.target }}/release/gn_out/obj/${{ env.LIB_NAME }}.${{ env.LIB_EXT }} > target/${{ env.LIB_NAME }}_release_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz
+          ls -l target/${{ env.LIB_NAME }}_release_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz
 
-          cp target/${{ matrix.config.target }}/${{ matrix.config.variant}}/gn_out/src_binding.rs target/src_binding${{ env.FEATURES_SUFFIX }}_${{ matrix.config.variant }}_${{ matrix.config.target }}.rs
-          ls -l target/src_binding${{ env.FEATURES_SUFFIX }}_${{ matrix.config.variant }}_${{ matrix.config.target }}.rs
+          cp target/${{ matrix.config.target }}/release/gn_out/src_binding.rs target/src_binding_release_${{ matrix.config.target }}.rs
+          ls -l target/src_binding_release_${{ matrix.config.target }}.rs
+
+      - name: Build simdutf release artifacts
+        run: ${{ matrix.config.cargo }} build --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} --features simdutf
+
+      - name: Prepare simdutf binary publish
+        run: |
+          gzip -9c target/${{ matrix.config.target }}/release/gn_out/obj/${{ env.LIB_NAME }}.${{ env.LIB_EXT }} > target/${{ env.LIB_NAME }}_simdutf_release_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz
+          ls -l target/${{ env.LIB_NAME }}_simdutf_release_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz
+
+          cp target/${{ matrix.config.target }}/release/gn_out/src_binding.rs target/src_binding_simdutf_release_${{ matrix.config.target }}.rs
+          ls -l target/src_binding_simdutf_release_${{ matrix.config.target }}.rs
 
       - name: Binary publish
-        uses: softprops/action-gh-release@v0.1.15
-        if: >-
-          github.repository == 'denoland/rusty_v8' &&
-          startsWith(github.ref, 'refs/tags/') &&
-          (matrix.config.variant == 'debug' || matrix.config.variant == 'release')
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          files: |
-            target/${{ env.LIB_NAME }}${{ env.FEATURES_SUFFIX }}_${{ matrix.config.variant }}_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz
-            target/src_binding${{ env.FEATURES_SUFFIX }}_${{ matrix.config.variant }}_${{ matrix.config.target }}.rs
-
-      - name: Upload CI artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: src_binding${{ env.FEATURES_SUFFIX }}_${{ matrix.config.variant }}_${{ matrix.config.target }}.rs
-          path: target/src_binding${{ env.FEATURES_SUFFIX }}_${{ matrix.config.variant }}_${{ matrix.config.target }}.rs
-
-  build-asan:
-    name: asan aarch64-apple-darwin
-    runs-on: macos-15
-    timeout-minutes: 180
-    env:
-      V8_FROM_SOURCE: true
-      RUSTFLAGS: -D warnings
-
-    steps:
-      - name: Configure git
-        run: git config --global core.symlinks true
-
-      - name: Clone repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 10
-          submodules: recursive
-
-      - name: Install rust
-        uses: dsherret/rust-toolchain-file@v1
-
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@main
-
-      - name: Install nextest
-        run: cargo binstall cargo-nextest --secure --locked
-
-      - name: Install python
-        uses: actions/setup-python@v5
-        with:
-          python-version: 3.11.x
-          architecture: x64
-
-      - name: Write git_submodule_status.txt
-        run: git submodule status --recursive > git_submodule_status.txt
-
-      - name: Cache
-        uses: actions/cache@v4
-        with:
-          path: |-
-            target/sccache
-            target/*/.*
-            target/*/build
-            target/*/deps
-          key: cargo1-aarch64-apple-darwin-asan-false-${{ hashFiles('Cargo.lock', 'build.rs', 'git_submodule_status.txt') }}
-          restore-keys: cargo1-aarch64-apple-darwin-asan-false-
-
-      - name: Install and start sccache
-        shell: pwsh
-        env:
-          SCCACHE_DIR: ${{ github.workspace }}/target/sccache
-          SCCACHE_CACHE_SIZE: 256M
-          SCCACHE_IDLE_TIMEOUT: 0
+          GH_TOKEN: ${{ github.token }}
         run: |
-          $version = "v0.8.2"
-          $platform = "aarch64-apple-darwin"
-          $basename = "sccache-$version-$platform"
-          $url = "https://github.com/mozilla/sccache/releases/download/$version/$basename.tar.gz"
-          cd ~
-          curl -LO $url
-          tar -xzvf "$basename.tar.gz"
-          . $basename/sccache --start-server
-          echo "$(pwd)/$basename" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Install Rust (nightly)
-        uses: dtolnay/rust-toolchain@nightly
-
-      - name: Test (ASAN)
-        env:
-          SCCACHE_IDLE_TIMEOUT: 0
-        # https://github.com/rust-lang/rust/issues/87215
-        run: |
-          rustup component add rust-src --toolchain nightly-aarch64-apple-darwin
-          # Is there a better way to install this tool?
-          curl -O http://commondatastorage.googleapis.com/chromium-browser-clang-staging/Mac/dsymutil-llvmorg-17-init-19076-g5533fc10-1.tgz
-          tar -C tools/clang/dsymutil/ -xvzf dsymutil-llvmorg-17-init-19076-g5533fc10-1.tgz
-          V8_FROM_SOURCE=true RUSTFLAGS="-C opt-level=1 -Zsanitizer=address" cargo +nightly -Z build-std nextest run --lib --bins --tests -v --cargo-verbose --cargo-verbose --target aarch64-apple-darwin
-
-  build-windows-arm64:
-    name: release aarch64-pc-windows-msvc
-    runs-on: ${{ github.repository == 'denoland/rusty_v8' && 'windows-2022-xxl' || 'windows-2022' }}
-    timeout-minutes: 180
-    env:
-      CARGO_VARIANT_FLAG: --release
-      V8_FROM_SOURCE: true
-      CCACHE: ccache
-      LIB_NAME: rusty_v8
-      LIB_EXT: lib
-      FEATURES_SUFFIX: ''
-    steps:
-      - name: Configure git
-        run: git config --global core.symlinks true
-
-      - name: Clone repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 10
-          submodules: recursive
-
-      - uses: dsherret/rust-toolchain-file@v1
-
-      - name: Install Windows ARM64 target
-        run: rustup target add aarch64-pc-windows-msvc
-
-      - name: Install nextest
-        uses: taiki-e/install-action@nextest
-
-      - name: Write git_submodule_status.txt
-        run: git submodule status --recursive > git_submodule_status.txt
-
-      - name: Cache
-        uses: actions/cache@v4
-        with:
-          path: |-
-            target/sccache
-            target/aarch64-pc-windows-msvc/release/gn_out
-          key: cargo1-aarch64-pc-windows-msvc-release-false-${{ hashFiles('Cargo.lock', 'build.rs', 'git_submodule_status.txt') }}
-          restore-keys: cargo1-aarch64-pc-windows-msvc-release-false-
-
-      - name: Install and start sccache
-        shell: pwsh
-        env:
-          SCCACHE_DIR: ${{ github.workspace }}/target/sccache
-          SCCACHE_CACHE_SIZE: 256M
-          SCCACHE_IDLE_TIMEOUT: 0
-        run: |
-          $version = "v0.8.2"
-          $platform = "x86_64-pc-windows-msvc"
-          $basename = "sccache-$version-$platform"
-          $url = "https://github.com/mozilla/sccache/releases/download/$version/$basename.tar.gz"
-          cd ~
-          curl -LO $url
-          tar -xzvf "$basename.tar.gz"
-          . $basename/sccache --start-server
-          echo "$(pwd)/$basename" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Install Clang
-        run: python3 tools/clang/scripts/update.py
-
-      - name: Build (cross-compile, no tests)
-        env:
-          SCCACHE_IDLE_TIMEOUT: 0
-        run: cargo build --all-targets --locked --target aarch64-pc-windows-msvc --release
-
-      - name: Clippy
-        run: cargo clippy --all-targets --locked --target aarch64-pc-windows-msvc --release -- -D clippy::all
-
-      - name: Prepare binary publish
-        run: |
-          gzip -9c target/aarch64-pc-windows-msvc/release/gn_out/obj/rusty_v8.lib > target/rusty_v8_release_aarch64-pc-windows-msvc.lib.gz
-          ls -l target/rusty_v8_release_aarch64-pc-windows-msvc.lib.gz
-
-          cp target/aarch64-pc-windows-msvc/release/gn_out/src_binding.rs target/src_binding_release_aarch64-pc-windows-msvc.rs
-          ls -l target/src_binding_release_aarch64-pc-windows-msvc.rs
-
-      - name: Binary publish
-        uses: softprops/action-gh-release@v0.1.15
-        if: github.repository == 'denoland/rusty_v8' && startsWith(github.ref, 'refs/tags/')
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          files: |
-            target/rusty_v8_release_aarch64-pc-windows-msvc.lib.gz
-            target/src_binding_release_aarch64-pc-windows-msvc.rs
-
-      - name: Upload CI artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: src_binding_release_aarch64-pc-windows-msvc.rs
-          path: target/src_binding_release_aarch64-pc-windows-msvc.rs
-
-      - name: Upload prebuilt library for testing
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-arm64-prebuilt-release
-          path: |
-            target/rusty_v8_release_aarch64-pc-windows-msvc.lib.gz
-            target/src_binding_release_aarch64-pc-windows-msvc.rs
-          retention-days: 1
-
-  build-windows-arm64-simdutf:
-    name: release aarch64-pc-windows-msvc simdutf
-    runs-on: ${{ github.repository == 'denoland/rusty_v8' && 'windows-2022-xxl' || 'windows-2022' }}
-    timeout-minutes: 180
-    env:
-      CARGO_VARIANT_FLAG: --release
-      V8_FROM_SOURCE: true
-      CCACHE: ccache
-      LIB_NAME: rusty_v8
-      LIB_EXT: lib
-      FEATURES_SUFFIX: '_simdutf'
-    steps:
-      - name: Configure git
-        run: git config --global core.symlinks true
-
-      - name: Clone repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 10
-          submodules: recursive
-
-      - uses: dsherret/rust-toolchain-file@v1
-
-      - name: Install Windows ARM64 target
-        run: rustup target add aarch64-pc-windows-msvc
-
-      - name: Install nextest
-        uses: taiki-e/install-action@nextest
-
-      - name: Write git_submodule_status.txt
-        run: git submodule status --recursive > git_submodule_status.txt
-
-      - name: Cache
-        uses: actions/cache@v4
-        with:
-          path: |-
-            target/sccache
-            target/aarch64-pc-windows-msvc/release/gn_out
-          key: cargo1-aarch64-pc-windows-msvc-release-simdutf-${{ hashFiles('Cargo.lock', 'build.rs', 'git_submodule_status.txt') }}
-          restore-keys: cargo1-aarch64-pc-windows-msvc-release-simdutf-
-
-      - name: Install and start sccache
-        shell: pwsh
-        env:
-          SCCACHE_DIR: ${{ github.workspace }}/target/sccache
-          SCCACHE_CACHE_SIZE: 256M
-          SCCACHE_IDLE_TIMEOUT: 0
-        run: |
-          $version = "v0.8.2"
-          $platform = "x86_64-pc-windows-msvc"
-          $basename = "sccache-$version-$platform"
-          $url = "https://github.com/mozilla/sccache/releases/download/$version/$basename.tar.gz"
-          cd ~
-          curl -LO $url
-          tar -xzvf "$basename.tar.gz"
-          . $basename/sccache --start-server
-          echo "$(pwd)/$basename" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Install Clang
-        run: python3 tools/clang/scripts/update.py
-
-      - name: Build (cross-compile, no tests)
-        env:
-          SCCACHE_IDLE_TIMEOUT: 0
-        run: cargo build --all-targets --locked --target aarch64-pc-windows-msvc --release --features simdutf
-
-      - name: Clippy
-        run: cargo clippy --all-targets --locked --target aarch64-pc-windows-msvc --release --features simdutf -- -D clippy::all
-
-      - name: Prepare binary publish
-        run: |
-          gzip -9c target/aarch64-pc-windows-msvc/release/gn_out/obj/rusty_v8.lib > target/rusty_v8_simdutf_release_aarch64-pc-windows-msvc.lib.gz
-          ls -l target/rusty_v8_simdutf_release_aarch64-pc-windows-msvc.lib.gz
-
-          cp target/aarch64-pc-windows-msvc/release/gn_out/src_binding.rs target/src_binding_simdutf_release_aarch64-pc-windows-msvc.rs
-          ls -l target/src_binding_simdutf_release_aarch64-pc-windows-msvc.rs
-
-      - name: Binary publish
-        uses: softprops/action-gh-release@v0.1.15
-        if: github.repository == 'denoland/rusty_v8' && startsWith(github.ref, 'refs/tags/')
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          files: |
-            target/rusty_v8_simdutf_release_aarch64-pc-windows-msvc.lib.gz
-            target/src_binding_simdutf_release_aarch64-pc-windows-msvc.rs
-
-      - name: Upload CI artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: src_binding_simdutf_release_aarch64-pc-windows-msvc.rs
-          path: target/src_binding_simdutf_release_aarch64-pc-windows-msvc.rs
-
-  test-windows-arm64:
-    name: test aarch64-pc-windows-msvc
-    needs: build-windows-arm64
-    runs-on: ${{ github.repository == 'denoland/rusty_v8' && 'windows-11-arm-xl' || 'windows-11-arm' }}
-    timeout-minutes: 60
-    steps:
-      - name: Configure git
-        run: git config --global core.symlinks true
-
-      - name: Clone repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 10
-          submodules: recursive
-
-      - uses: dsherret/rust-toolchain-file@v1
-
-      - name: Install nextest
-        uses: taiki-e/install-action@nextest
-
-      - name: Download prebuilt library
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-arm64-prebuilt-release
-
-      - name: Run tests with prebuilt library
-        env:
-          RUSTY_V8_ARCHIVE: ${{ github.workspace }}/rusty_v8_release_aarch64-pc-windows-msvc.lib.gz
-          RUSTY_V8_SRC_BINDING_PATH: ${{ github.workspace }}/src_binding_release_aarch64-pc-windows-msvc.rs
-        run: cargo nextest run -v --all-targets --locked --target aarch64-pc-windows-msvc --release --no-fail-fast
-
-  publish:
-    needs: [build, build-windows-arm64, build-windows-arm64-simdutf]
-    runs-on: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
-    if: github.repository == 'denoland/rusty_v8' && startsWith(github.ref, 'refs/tags/')
-    steps:
-      - name: Configure git
-        run: git config --global core.symlinks true
-
-      - name: Clone repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 10
-          submodules: recursive
-
-      - name: Install rust
-        uses: dsherret/rust-toolchain-file@v1
-
-      - name: Install python
-        uses: actions/setup-python@v5
-        with:
-          python-version: 3.11.x
-          architecture: x64
-
-      - name: Download CI artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: gen
-          pattern: src_binding_*.rs
-          merge-multiple: true
-
-      - name: Publish
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish -vv --locked --allow-dirty
+          set -euo pipefail
+          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$GITHUB_REF_NAME" \
+              --notes "Nimbus rusty_v8 $GITHUB_REF_NAME" \
+              --verify-tag \
+              || gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null
+          fi
+          gh release upload "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber \
+            target/${{ env.LIB_NAME }}_release_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz \
+            target/src_binding_release_${{ matrix.config.target }}.rs \
+            target/${{ env.LIB_NAME }}_simdutf_release_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz \
+            target/src_binding_simdutf_release_${{ matrix.config.target }}.rs
