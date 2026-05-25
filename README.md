@@ -2,9 +2,16 @@
 
 V8 Version: 14.9.207.2
 
-[![ci](https://github.com/denoland/rusty_v8/workflows/ci/badge.svg?branch=main)](https://github.com/denoland/rusty_v8/actions)
+[![ci](https://github.com/nimbus/rusty_v8/workflows/ci/badge.svg?branch=nimbus/v149.0.0)](https://github.com/nimbus/rusty_v8/actions)
 [![crates](https://img.shields.io/crates/v/v8.svg)](https://crates.io/crates/v8)
 [![docs](https://docs.rs/v8/badge.svg)](https://docs.rs/v8)
+
+## Nimbus Fork
+
+This branch is the Nimbus-maintained `rusty_v8` fork for Deno `v2.8.0`.
+It is based on upstream `v149.0.0` plus the Nimbus runtime patches required by
+Nimbus' embedded V8/Deno/Node runtime. New Nimbus release tags use
+`v149.0.0-nimbus.N`.
 
 ## Goals
 
@@ -45,8 +52,8 @@ will occur regularly to stay in sync with Chrome's release cycle.
 ## Binary Build
 
 V8 is very large and takes a long time to compile. Many users will prefer to use
-a prebuilt version of V8. We publish static libs for every version of rusty v8
-on [Github](https://github.com/denoland/rusty_v8/releases).
+a prebuilt version of V8. Nimbus release branches publish static libs on
+[GitHub](https://github.com/nimbus/rusty_v8/releases).
 
 Binaries builds are turned on by default: `cargo build` will initiate a download
 from github to get the static lib. To disable this build using the
@@ -66,7 +73,7 @@ We default to release builds of `v8` due to performance & CI reasons in `deno`.
 
 Tells the build script where to get binary builds from. Understands `http://`
 and `https://` URLs, and file paths. The default is
-https://github.com/denoland/rusty_v8/releases.
+https://github.com/nimbus/rusty_v8/releases.
 
 File-based mirrors are good for using cached downloads. First, point the
 environment variable to a suitable location:
@@ -79,7 +86,7 @@ Then populate the cache:
 ```bash
 #!/bin/bash
 
-# see https://github.com/denoland/rusty_v8/releases
+# see https://github.com/nimbus/rusty_v8/releases
 
 for REL in v0.13.0 v0.12.0; do
   mkdir -p $RUSTY_V8_MIRROR/$REL
@@ -89,7 +96,7 @@ for REL in v0.13.0 v0.12.0; do
   ; do
     if [ ! -f $RUSTY_V8_MIRROR/$REL/$FILE ]; then
       wget -O $RUSTY_V8_MIRROR/$REL/$FILE \
-        https://github.com/denoland/rusty_v8/releases/download/$REL/$FILE
+        https://github.com/nimbus/rusty_v8/releases/download/$REL/$FILE
     fi
   done
 done
@@ -228,27 +235,23 @@ location in your `.cargo` folder. Running `cargo build -v -v` will print two
 lines that you can use to determine the correct file and cache location:
 
 ```
-[v8 0.87.0] static lib URL: https://github.com/denoland/rusty_v8/releases/download/v0.87.0/librusty_v8_release_aarch64-apple-darwin.a.gz
-[v8 0.87.0] Looking for download in '"/Users/<name>/.cargo/.rusty_v8/https___github_com_denoland_rusty_v8_releases_download_v0_87_0_librusty_v8_release_aarch64_apple_darwin_a_gz"'
+[v8 149.0.0] static lib URL: https://github.com/nimbus/rusty_v8/releases/download/v149.0.0-nimbus.1/librusty_v8_release_aarch64-apple-darwin.a.gz
+[v8 149.0.0] Looking for download in '"/Users/<name>/.cargo/.rusty_v8/https___github_com_nimbus_rusty_v8_releases_download_v149_0_0_nimbus_1_librusty_v8_release_aarch64_apple_darwin_a_gz"'
 ```
 
 Given the above log output, use `curl` to download the file like so:
 
 ```
-curl -L https://github.com/denoland/rusty_v8/releases/download/v0.87.0/librusty_v8_release_aarch64-apple-darwin.a.gz >
-  /Users/<name>/.cargo/.rusty_v8/https___github_com_denoland_rusty_v8_releases_download_v0_87_0_librusty_v8_release_aarch64_apple_darwin_a_gz
+curl -L https://github.com/nimbus/rusty_v8/releases/download/v149.0.0-nimbus.1/librusty_v8_release_aarch64-apple-darwin.a.gz >
+  /Users/<name>/.cargo/.rusty_v8/https___github_com_nimbus_rusty_v8_releases_download_v149_0_0_nimbus_1_librusty_v8_release_aarch64_apple_darwin_a_gz
 ```
 
 ## For maintainers
 
 **Cut a release**
 
-Create a PR to bump the release version (e.g.
-https://github.com/denoland/rusty_v8/pull/1415).
-
-Create a new release/tag after the bump PR is landed. CI will publish the crate
-and upload release binaries. You will need to manually upload binary archives
-for M1 build.
+Create a new Nimbus release tag after the branch is verified. CI creates the
+GitHub release and uploads release binaries for the configured Nimbus targets.
 
 ```
 $ V8_FROM_SOURCE=1 cargo build
