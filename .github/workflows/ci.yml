@@ -48,6 +48,10 @@ jobs:
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
       PIP_NO_CACHE_DIR: "1"
       RUSTFLAGS: -D warnings
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_CACHE_SIZE: 2G
+      SCCACHE_IDLE_TIMEOUT: 0
 
     steps:
       - name: Configure git
@@ -74,6 +78,8 @@ jobs:
 
       - name: Install cargo-binstall
         uses: cargo-bins/cargo-binstall@v1.19.1
+        with:
+          version: 1.19.1
 
       - name: Install nextest
         run: cargo binstall cargo-nextest --secure --locked --no-confirm
@@ -104,46 +110,26 @@ jobs:
           sudo ln -s /usr/aarch64-linux-gnu/lib/ld-linux-aarch64.so.1 \
                      /lib/ld-linux-aarch64.so.1
 
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc-10" >> ${GITHUB_ENV}
-          echo "QEMU_LD_PREFIX=/usr/aarch64-linux-gnu" >> ${GITHUB_ENV}
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc-10" >> "$GITHUB_ENV"
+          echo "QEMU_LD_PREFIX=/usr/aarch64-linux-gnu" >> "$GITHUB_ENV"
 
       - name: Write git_submodule_status.txt
         run: git submodule status --recursive > git_submodule_status.txt
 
-      - name: Cache
-        if: matrix.config.target != 'aarch64-apple-darwin'
+      - name: Cache cargo build metadata
         uses: actions/cache@v5
         with:
           path: |-
-            target/sccache
             target/*/.*
             target/*/build
             target/*/deps
-          key: cargo1-${{ matrix.config.target }}-release-${{ hashFiles('Cargo.lock', 'build.rs', 'git_submodule_status.txt') }}
+          key: cargo1-${{ matrix.config.target }}-release-${{ hashFiles('Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'build.rs', 'git_submodule_status.txt') }}
           restore-keys: cargo1-${{ matrix.config.target }}-release-
 
       - name: Install and start sccache
-        shell: pwsh
-        env:
-          SCCACHE_DIR: ${{ github.workspace }}/target/sccache
-          SCCACHE_CACHE_SIZE: 256M
-          SCCACHE_IDLE_TIMEOUT: 0
-        run: |
-          $version = "v0.8.2"
-          $platform =
-            @{ "x86_64-apple-darwin"       = "x86_64-apple-darwin"
-               "aarch64-apple-darwin"      = "aarch64-apple-darwin"
-               "x86_64-unknown-linux-gnu"  = "x86_64-unknown-linux-musl"
-               "aarch64-unknown-linux-gnu" = "aarch64-unknown-linux-musl"
-               "x86_64-pc-windows-msvc"    = "x86_64-pc-windows-msvc"
-             }['${{ matrix.config.target }}']
-          $basename = "sccache-$version-$platform"
-          $url = "https://github.com/mozilla/sccache/releases/download/$version/$basename.tar.gz"
-          cd ~
-          curl -LO $url
-          tar -xzvf "$basename.tar.gz"
-          . $basename/sccache --start-server
-          echo "$(pwd)/$basename" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        uses: mozilla-actions/sccache-action@v0.0.10
+        with:
+          version: v0.15.0
 
       - name: Install Clang
         if: startsWith(matrix.config.os, 'ubuntu')
@@ -153,13 +139,13 @@ jobs:
           sudo apt-get update
           sudo apt-get -qq remove 'clang-*'
           sudo apt-get install lld-19 clang-19 clang-tools-19 clang-tidy-19 clang-format-19 libclang-19-dev -y
-          echo "LIBCLANG_PATH=/usr/lib/llvm-19/lib" >> $GITHUB_ENV
+          echo "LIBCLANG_PATH=/usr/lib/llvm-19/lib" >> "$GITHUB_ENV"
 
       - name: Set LIBCLANG_PATH (macOS)
         if: startsWith(matrix.config.os, 'macos')
         run: |
           XCODE_CLANG_LIB="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib"
-          echo "LIBCLANG_PATH=$XCODE_CLANG_LIB" >> $GITHUB_ENV
+          echo "LIBCLANG_PATH=$XCODE_CLANG_LIB" >> "$GITHUB_ENV"
 
       - name: Check Rust formatting
         if: matrix.config.target == 'x86_64-unknown-linux-gnu'
@@ -170,8 +156,6 @@ jobs:
         run: clang-format-19 --verbose --Werror --dry-run src/*.cc src/*.hpp src/*.h
 
       - name: Test
-        env:
-          SCCACHE_IDLE_TIMEOUT: 0
         run: ${{ matrix.config.cargo }} nextest run -v --cargo-verbose --cargo-verbose --all-targets --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }}
 
       - name: Clippy
@@ -186,8 +170,6 @@ jobs:
           ls -l target/src_binding_release_${{ matrix.config.target }}.rs
 
       - name: Test simdutf
-        env:
-          SCCACHE_IDLE_TIMEOUT: 0
         run: ${{ matrix.config.cargo }} nextest run -v --cargo-verbose --cargo-verbose --all-targets --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} --features simdutf
 
       - name: Clippy simdutf
@@ -205,7 +187,7 @@ jobs:
           ls -l target/src_binding_simdutf_release_${{ matrix.config.target }}.rs
 
       - name: Upload release artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rusty-v8-release-${{ matrix.config.target }}
           path: |
@@ -214,6 +196,7 @@ jobs:
             target/${{ env.LIB_NAME }}_simdutf_release_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz
             target/src_binding_simdutf_release_${{ matrix.config.target }}.rs
           if-no-files-found: error
+          compression-level: 0
           retention-days: 7
 
   publish-release:
@@ -226,7 +209,7 @@ jobs:
       contents: write
     steps:
       - name: Download release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: release-artifacts
           pattern: rusty-v8-release-*
