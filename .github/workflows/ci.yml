@@ -277,6 +277,7 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --title "$GITHUB_REF_NAME" \
               --notes "Nimbus rusty_v8 $GITHUB_REF_NAME" \
+              --draft \
               --verify-tag \
               || gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null
           fi
@@ -284,3 +285,6 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --clobber \
             release-artifacts/*
+          gh release edit "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false
