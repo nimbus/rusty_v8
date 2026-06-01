@@ -41,6 +41,7 @@ fn main() {
     "RUSTY_V8_ARCHIVE",
     "RUSTY_V8_MIRROR",
     "RUSTY_V8_SRC_BINDING_PATH",
+    "RUSTY_V8_VERSION",
     "SCCACHE",
     "V8_FORCE_DEBUG",
     "V8_FROM_SOURCE",

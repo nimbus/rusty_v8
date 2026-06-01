@@ -2,10 +2,10 @@ name: ci
 
 on:
   push:
-    branches: [nimbus/v149.0.0]
-    tags: ["v*"]
+    branches: ["nimbus/v*"]
+    tags: ["v*-nimbus.*"]
   pull_request:
-    branches: [nimbus/v149.0.0]
+    branches: ["nimbus/v*"]
 
 permissions:
   contents: write
@@ -160,6 +160,14 @@ jobs:
         run: |
           XCODE_CLANG_LIB="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib"
           echo "LIBCLANG_PATH=$XCODE_CLANG_LIB" >> $GITHUB_ENV
+
+      - name: Check Rust formatting
+        if: matrix.config.target == 'x86_64-unknown-linux-gnu'
+        run: cargo fmt --check
+
+      - name: Check C++ formatting
+        if: matrix.config.target == 'x86_64-unknown-linux-gnu'
+        run: clang-format-19 --verbose --Werror --dry-run src/*.cc src/*.hpp src/*.h
 
       - name: Test
         env:
