@@ -2,16 +2,16 @@
 
 V8 Version: 14.9.207.2
 
-[![ci](https://github.com/nimbus/rusty_v8/workflows/ci/badge.svg?branch=nimbus/v149.0.0)](https://github.com/nimbus/rusty_v8/actions)
+[![ci](https://github.com/nimbus/rusty_v8/workflows/ci/badge.svg?branch=nimbus/v149.2.0)](https://github.com/nimbus/rusty_v8/actions)
 [![crates](https://img.shields.io/crates/v/v8.svg)](https://crates.io/crates/v8)
 [![docs](https://docs.rs/v8/badge.svg)](https://docs.rs/v8)
 
 ## Nimbus Fork
 
-This branch is the Nimbus-maintained `rusty_v8` fork for Deno `v2.8.0`.
-It is based on upstream `v149.0.0` plus the Nimbus runtime patches required by
+This branch is the Nimbus-maintained `rusty_v8` fork for Deno `v2.8.1`.
+It is based on upstream `v149.2.0` plus the Nimbus runtime patches required by
 Nimbus' embedded V8/Deno/Node runtime. New Nimbus release tags use
-`v149.0.0-nimbus.N`.
+`v149.2.0-nimbus.N`.
 
 ## Goals
 
@@ -55,6 +55,12 @@ V8 is very large and takes a long time to compile. Many users will prefer to use
 a prebuilt version of V8. Nimbus release branches publish static libs on
 [GitHub](https://github.com/nimbus/rusty_v8/releases).
 
+Nimbus prebuilt releases publish release-mode default and `simdutf` archives for
+`aarch64-apple-darwin`, `x86_64-unknown-linux-gnu`,
+`aarch64-unknown-linux-gnu`, and `x86_64-pc-windows-msvc`. Other
+profile/feature combinations should be built from source with
+`V8_FROM_SOURCE=1` or supplied through `RUSTY_V8_ARCHIVE`.
+
 Binaries builds are turned on by default: `cargo build` will initiate a download
 from github to get the static lib. To disable this build using the
 `V8_FROM_SOURCE` environmental variable.
@@ -74,6 +80,11 @@ We default to release builds of `v8` due to performance & CI reasons in `deno`.
 Tells the build script where to get binary builds from. Understands `http://`
 and `https://` URLs, and file paths. The default is
 https://github.com/nimbus/rusty_v8/releases.
+
+The default Nimbus release tag is computed as
+`v<CARGO_PKG_VERSION>-nimbus.1`. Set `RUSTY_V8_VERSION` to select a different
+Nimbus release tag without changing the crate version, for example
+`RUSTY_V8_VERSION=149.2.0-nimbus.2`.
 
 File-based mirrors are good for using cached downloads. First, point the
 environment variable to a suitable location:
@@ -235,15 +246,15 @@ location in your `.cargo` folder. Running `cargo build -v -v` will print two
 lines that you can use to determine the correct file and cache location:
 
 ```
-[v8 149.0.0] static lib URL: https://github.com/nimbus/rusty_v8/releases/download/v149.0.0-nimbus.1/librusty_v8_release_aarch64-apple-darwin.a.gz
-[v8 149.0.0] Looking for download in '"/Users/<name>/.cargo/.rusty_v8/https___github_com_nimbus_rusty_v8_releases_download_v149_0_0_nimbus_1_librusty_v8_release_aarch64_apple_darwin_a_gz"'
+[v8 149.2.0] static lib URL: https://github.com/nimbus/rusty_v8/releases/download/v149.2.0-nimbus.1/librusty_v8_release_aarch64-apple-darwin.a.gz
+[v8 149.2.0] Looking for download in '"/Users/<name>/.cargo/.rusty_v8/https___github_com_nimbus_rusty_v8_releases_download_v149_2_0_nimbus_1_librusty_v8_release_aarch64_apple_darwin_a_gz"'
 ```
 
 Given the above log output, use `curl` to download the file like so:
 
 ```
-curl -L https://github.com/nimbus/rusty_v8/releases/download/v149.0.0-nimbus.1/librusty_v8_release_aarch64-apple-darwin.a.gz >
-  /Users/<name>/.cargo/.rusty_v8/https___github_com_nimbus_rusty_v8_releases_download_v149_0_0_nimbus_1_librusty_v8_release_aarch64_apple_darwin_a_gz
+curl -L https://github.com/nimbus/rusty_v8/releases/download/v149.2.0-nimbus.1/librusty_v8_release_aarch64-apple-darwin.a.gz >
+  /Users/<name>/.cargo/.rusty_v8/https___github_com_nimbus_rusty_v8_releases_download_v149_2_0_nimbus_1_librusty_v8_release_aarch64_apple_darwin_a_gz
 ```
 
 ## For maintainers
