@@ -13,6 +13,9 @@ It is based on upstream `v149.4.0` plus the Nimbus runtime patches required by
 Nimbus' embedded V8/Deno/Node runtime. New Nimbus release tags use
 `v149.4.0-nimbus.N`.
 
+The current Nimbus prebuilt release for this default branch is
+`v149.4.0-nimbus.1`.
+
 ## Goals
 
 1. Provide high quality Rust bindings to
