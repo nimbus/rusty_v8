@@ -87,7 +87,7 @@ https://github.com/nimbus/rusty_v8/releases.
 The default Nimbus release tag is computed as
 `v<CARGO_PKG_VERSION>-nimbus.1`. Set `RUSTY_V8_VERSION` to select a different
 Nimbus release tag without changing the crate version, for example
-`RUSTY_V8_VERSION=149.4.0-nimbus.2`.
+`RUSTY_V8_VERSION=149.4.0-nimbus.1`.
 
 File-based mirrors are good for using cached downloads. First, point the
 environment variable to a suitable location:
