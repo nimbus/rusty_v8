@@ -102,7 +102,7 @@ Then populate the cache:
 
 # see https://github.com/nimbus/rusty_v8/releases
 
-for REL in v0.13.0 v0.12.0; do
+for REL in v149.4.0-nimbus.1; do
   mkdir -p $RUSTY_V8_MIRROR/$REL
   for FILE in \
     librusty_v8_debug_x86_64-unknown-linux-gnu.a \
