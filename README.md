@@ -105,8 +105,8 @@ Then populate the cache:
 for REL in v149.4.0-nimbus.1; do
   mkdir -p $RUSTY_V8_MIRROR/$REL
   for FILE in \
-    librusty_v8_debug_x86_64-unknown-linux-gnu.a \
-    librusty_v8_release_x86_64-unknown-linux-gnu.a \
+    librusty_v8_release_x86_64-unknown-linux-gnu.a.gz \
+    librusty_v8_simdutf_release_x86_64-unknown-linux-gnu.a.gz \
   ; do
     if [ ! -f $RUSTY_V8_MIRROR/$REL/$FILE ]; then
       wget -O $RUSTY_V8_MIRROR/$REL/$FILE \
