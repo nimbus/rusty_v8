@@ -14,7 +14,7 @@ Nimbus' embedded V8/Deno/Node runtime. New Nimbus release tags use
 `v149.4.0-nimbus.N`.
 
 The current Nimbus prebuilt release for this default branch is
-[`v149.4.0-nimbus.1`](https://github.com/nimbus/rusty_v8/releases/tag/v149.4.0-nimbus.1).
+[`v149.4.0-nimbus.2`](https://github.com/nimbus/rusty_v8/releases/tag/v149.4.0-nimbus.2).
 
 ## Goals
 
@@ -85,9 +85,9 @@ and `https://` URLs, and file paths. The default is
 https://github.com/nimbus/rusty_v8/releases.
 
 The default Nimbus release tag is computed as
-`v<CARGO_PKG_VERSION>-nimbus.1`. Set `RUSTY_V8_VERSION` to select a different
+`v<CARGO_PKG_VERSION>-nimbus.2`. Set `RUSTY_V8_VERSION` to select a different
 Nimbus release tag without changing the crate version, for example
-`RUSTY_V8_VERSION=149.4.0-nimbus.1`.
+`RUSTY_V8_VERSION=149.4.0-nimbus.2`.
 
 File-based mirrors are good for using cached downloads. First, point the
 environment variable to a suitable location:
@@ -102,7 +102,7 @@ Then populate the cache:
 
 # see https://github.com/nimbus/rusty_v8/releases
 
-for REL in v149.4.0-nimbus.1; do
+for REL in v149.4.0-nimbus.2; do
   mkdir -p $RUSTY_V8_MIRROR/$REL
   for FILE in \
     librusty_v8_release_x86_64-unknown-linux-gnu.a.gz \
@@ -249,14 +249,14 @@ location in your `.cargo` folder. Running `cargo build -v -v` will print two
 lines that you can use to determine the correct file and cache location:
 
 ```
-[v8 149.4.0] static lib URL: https://github.com/nimbus/rusty_v8/releases/download/v149.4.0-nimbus.1/librusty_v8_release_aarch64-apple-darwin.a.gz
+[v8 149.4.0] static lib URL: https://github.com/nimbus/rusty_v8/releases/download/v149.4.0-nimbus.2/librusty_v8_release_aarch64-apple-darwin.a.gz
 [v8 149.4.0] Looking for download in '"/Users/<name>/.cargo/.rusty_v8/https___github_com_nimbus_rusty_v8_releases_download_v149_4_0_nimbus_1_librusty_v8_release_aarch64_apple_darwin_a_gz"'
 ```
 
 Given the above log output, use `curl` to download the file like so:
 
 ```
-curl -L https://github.com/nimbus/rusty_v8/releases/download/v149.4.0-nimbus.1/librusty_v8_release_aarch64-apple-darwin.a.gz >
+curl -L https://github.com/nimbus/rusty_v8/releases/download/v149.4.0-nimbus.2/librusty_v8_release_aarch64-apple-darwin.a.gz >
   /Users/<name>/.cargo/.rusty_v8/https___github_com_nimbus_rusty_v8_releases_download_v149_4_0_nimbus_1_librusty_v8_release_aarch64_apple_darwin_a_gz
 ```
 
