@@ -186,6 +186,23 @@ jobs:
           cp target/${{ matrix.config.target }}/release/gn_out/src_binding.rs target/src_binding_simdutf_release_${{ matrix.config.target }}.rs
           ls -l target/src_binding_simdutf_release_${{ matrix.config.target }}.rs
 
+      - name: Test ptrcomp simdutf
+        run: ${{ matrix.config.cargo }} nextest run -v --cargo-verbose --cargo-verbose --all-targets --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} --features "v8_enable_pointer_compression simdutf"
+
+      - name: Clippy ptrcomp simdutf
+        run: ${{ matrix.config.cargo }} clippy --all-targets --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} --features "v8_enable_pointer_compression simdutf" -- -D clippy::all
+
+      - name: Build ptrcomp simdutf release artifacts
+        run: ${{ matrix.config.cargo }} build --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} --features "v8_enable_pointer_compression simdutf"
+
+      - name: Prepare ptrcomp simdutf binary publish
+        run: |
+          gzip -9c target/${{ matrix.config.target }}/release/gn_out/obj/${{ env.LIB_NAME }}.${{ env.LIB_EXT }} > target/${{ env.LIB_NAME }}_ptrcomp_simdutf_release_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz
+          ls -l target/${{ env.LIB_NAME }}_ptrcomp_simdutf_release_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz
+
+          cp target/${{ matrix.config.target }}/release/gn_out/src_binding.rs target/src_binding_ptrcomp_simdutf_release_${{ matrix.config.target }}.rs
+          ls -l target/src_binding_ptrcomp_simdutf_release_${{ matrix.config.target }}.rs
+
       - name: Upload release artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -195,6 +212,8 @@ jobs:
             target/src_binding_release_${{ matrix.config.target }}.rs
             target/${{ env.LIB_NAME }}_simdutf_release_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz
             target/src_binding_simdutf_release_${{ matrix.config.target }}.rs
+            target/${{ env.LIB_NAME }}_ptrcomp_simdutf_release_${{ matrix.config.target }}.${{ env.LIB_EXT }}.gz
+            target/src_binding_ptrcomp_simdutf_release_${{ matrix.config.target }}.rs
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
@@ -222,20 +241,28 @@ jobs:
           expected=(
             "librusty_v8_release_aarch64-apple-darwin.a.gz"
             "librusty_v8_simdutf_release_aarch64-apple-darwin.a.gz"
+            "librusty_v8_ptrcomp_simdutf_release_aarch64-apple-darwin.a.gz"
             "src_binding_release_aarch64-apple-darwin.rs"
             "src_binding_simdutf_release_aarch64-apple-darwin.rs"
+            "src_binding_ptrcomp_simdutf_release_aarch64-apple-darwin.rs"
             "librusty_v8_release_x86_64-unknown-linux-gnu.a.gz"
             "librusty_v8_simdutf_release_x86_64-unknown-linux-gnu.a.gz"
+            "librusty_v8_ptrcomp_simdutf_release_x86_64-unknown-linux-gnu.a.gz"
             "src_binding_release_x86_64-unknown-linux-gnu.rs"
             "src_binding_simdutf_release_x86_64-unknown-linux-gnu.rs"
+            "src_binding_ptrcomp_simdutf_release_x86_64-unknown-linux-gnu.rs"
             "librusty_v8_release_aarch64-unknown-linux-gnu.a.gz"
             "librusty_v8_simdutf_release_aarch64-unknown-linux-gnu.a.gz"
+            "librusty_v8_ptrcomp_simdutf_release_aarch64-unknown-linux-gnu.a.gz"
             "src_binding_release_aarch64-unknown-linux-gnu.rs"
             "src_binding_simdutf_release_aarch64-unknown-linux-gnu.rs"
+            "src_binding_ptrcomp_simdutf_release_aarch64-unknown-linux-gnu.rs"
             "rusty_v8_release_x86_64-pc-windows-msvc.lib.gz"
             "rusty_v8_simdutf_release_x86_64-pc-windows-msvc.lib.gz"
+            "rusty_v8_ptrcomp_simdutf_release_x86_64-pc-windows-msvc.lib.gz"
             "src_binding_release_x86_64-pc-windows-msvc.rs"
             "src_binding_simdutf_release_x86_64-pc-windows-msvc.rs"
+            "src_binding_ptrcomp_simdutf_release_x86_64-pc-windows-msvc.rs"
           )
           missing=0
           for file in "${expected[@]}"; do
