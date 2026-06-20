@@ -8,6 +8,7 @@ on:
     branches: ["nimbus/v*"]
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -199,6 +200,17 @@ jobs:
           compression-level: 0
           retention-days: 7
 
+      - name: Show sccache stats
+        if: always()
+        run: sccache --show-stats
+
+      - name: Show GitHub Actions cache usage
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh cache list --repo ${{ github.repository }} --sort size_in_bytes --order desc --limit 30
+
   build-ptrcomp-simdutf:
     name: release ${{ matrix.config.target }} ptrcomp simdutf
     runs-on: ${{ matrix.config.os }}
@@ -353,6 +365,17 @@ jobs:
           if-no-files-found: error
           compression-level: 0
           retention-days: 7
+
+      - name: Show sccache stats
+        if: always()
+        run: sccache --show-stats
+
+      - name: Show GitHub Actions cache usage
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh cache list --repo ${{ github.repository }} --sort size_in_bytes --order desc --limit 30
 
   publish-release:
     name: publish release assets
