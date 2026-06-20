@@ -28,10 +28,6 @@ jobs:
             target: x86_64-unknown-linux-gnu
             cargo: cargo
 
-          - os: ubuntu-22.04
-            target: aarch64-unknown-linux-gnu
-            cargo: cargo
-
           - os: windows-2022
             target: x86_64-pc-windows-msvc
             cargo: cargo
@@ -339,12 +335,7 @@ jobs:
           echo "LIBCLANG_PATH=$XCODE_CLANG_LIB" >> "$GITHUB_ENV"
 
       - name: Test ptrcomp simdutf
-        if: matrix.config.target != 'aarch64-unknown-linux-gnu'
         run: ${{ matrix.config.cargo }} nextest run -v --cargo-verbose --cargo-verbose --all-targets --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} --features "v8_enable_pointer_compression simdutf"
-
-      - name: Test ptrcomp simdutf (Linux ARM QEMU serialized)
-        if: matrix.config.target == 'aarch64-unknown-linux-gnu'
-        run: ${{ matrix.config.cargo }} nextest run -j 1 -v --cargo-verbose --cargo-verbose --all-targets --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} --features "v8_enable_pointer_compression simdutf"
 
       - name: Clippy ptrcomp simdutf
         run: ${{ matrix.config.cargo }} clippy --all-targets --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} --features "v8_enable_pointer_compression simdutf" -- -D clippy::all
@@ -417,10 +408,8 @@ jobs:
             "src_binding_ptrcomp_simdutf_release_x86_64-unknown-linux-gnu.rs"
             "librusty_v8_release_aarch64-unknown-linux-gnu.a.gz"
             "librusty_v8_simdutf_release_aarch64-unknown-linux-gnu.a.gz"
-            "librusty_v8_ptrcomp_simdutf_release_aarch64-unknown-linux-gnu.a.gz"
             "src_binding_release_aarch64-unknown-linux-gnu.rs"
             "src_binding_simdutf_release_aarch64-unknown-linux-gnu.rs"
-            "src_binding_ptrcomp_simdutf_release_aarch64-unknown-linux-gnu.rs"
             "rusty_v8_release_x86_64-pc-windows-msvc.lib.gz"
             "rusty_v8_simdutf_release_x86_64-pc-windows-msvc.lib.gz"
             "src_binding_release_x86_64-pc-windows-msvc.rs"
