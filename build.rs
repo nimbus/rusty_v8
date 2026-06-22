@@ -579,7 +579,7 @@ fn static_lib_name(suffix: &str) -> String {
 fn prebuilt_version() -> String {
   env::var("RUSTY_V8_VERSION").unwrap_or_else(|_| {
     let version = env::var("CARGO_PKG_VERSION").unwrap();
-    format!("{version}-nimbus.9")
+    format!("{version}-nimbus.10")
   })
 }
 
