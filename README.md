@@ -2,7 +2,7 @@
 
 V8 Version: 15.0.245.2
 
-[![ci](https://github.com/denoland/rusty_v8/workflows/ci/badge.svg?branch=main)](https://github.com/denoland/rusty_v8/actions)
+[![nimbus release assets](https://github.com/nimbus/rusty_v8/actions/workflows/nimbus-release.yml/badge.svg?branch=nimbus%2Fv150.1.0)](https://github.com/nimbus/rusty_v8/actions/workflows/nimbus-release.yml)
 [![crates](https://img.shields.io/crates/v/v8.svg)](https://crates.io/crates/v8)
 [![docs](https://docs.rs/v8/badge.svg)](https://docs.rs/v8)
 
@@ -95,17 +95,18 @@ Then populate the cache:
 ```bash
 #!/bin/bash
 
-# see https://github.com/denoland/rusty_v8/releases
+# see https://github.com/nimbus/rusty_v8/releases
 
-for REL in v0.13.0 v0.12.0; do
+for REL in v150.1.0-nimbus.1; do
   mkdir -p $RUSTY_V8_MIRROR/$REL
   for FILE in \
-    librusty_v8_debug_x86_64-unknown-linux-gnu.a \
-    librusty_v8_release_x86_64-unknown-linux-gnu.a \
+    librusty_v8_release_x86_64-unknown-linux-gnu.a.gz \
+    librusty_v8_simdutf_release_x86_64-unknown-linux-gnu.a.gz \
+    librusty_v8_ptrcomp_simdutf_release_x86_64-unknown-linux-gnu.a.gz \
   ; do
     if [ ! -f $RUSTY_V8_MIRROR/$REL/$FILE ]; then
       wget -O $RUSTY_V8_MIRROR/$REL/$FILE \
-        https://github.com/denoland/rusty_v8/releases/download/$REL/$FILE
+        https://github.com/nimbus/rusty_v8/releases/download/$REL/$FILE
     fi
   done
 done
@@ -256,15 +257,15 @@ location in your `.cargo` folder. Running `cargo build -v -v` will print two
 lines that you can use to determine the correct file and cache location:
 
 ```
-[v8 0.87.0] static lib URL: https://github.com/denoland/rusty_v8/releases/download/v0.87.0/librusty_v8_release_aarch64-apple-darwin.a.gz
-[v8 0.87.0] Looking for download in '"/Users/<name>/.cargo/.rusty_v8/https___github_com_denoland_rusty_v8_releases_download_v0_87_0_librusty_v8_release_aarch64_apple_darwin_a_gz"'
+[v8 150.1.0] static lib URL: https://github.com/nimbus/rusty_v8/releases/download/v150.1.0-nimbus.1/librusty_v8_release_aarch64-apple-darwin.a.gz
+[v8 150.1.0] Looking for download in '"/Users/<name>/.cargo/.rusty_v8/https___github_com_nimbus_rusty_v8_releases_download_v150_1_0_nimbus_1_librusty_v8_release_aarch64_apple_darwin_a_gz"'
 ```
 
 Given the above log output, use `curl` to download the file like so:
 
 ```
-curl -L https://github.com/denoland/rusty_v8/releases/download/v0.87.0/librusty_v8_release_aarch64-apple-darwin.a.gz >
-  /Users/<name>/.cargo/.rusty_v8/https___github_com_denoland_rusty_v8_releases_download_v0_87_0_librusty_v8_release_aarch64_apple_darwin_a_gz
+curl -L https://github.com/nimbus/rusty_v8/releases/download/v150.1.0-nimbus.1/librusty_v8_release_aarch64-apple-darwin.a.gz >
+  /Users/<name>/.cargo/.rusty_v8/https___github_com_nimbus_rusty_v8_releases_download_v150_1_0_nimbus_1_librusty_v8_release_aarch64_apple_darwin_a_gz
 ```
 
 ## For maintainers
