@@ -188,6 +188,9 @@ fn build_binding() {
     "-isystemthird_party/libc++abi/src/include".to_string(),
   ];
 
+  // libclang supplies its own resource include directory. Adding it again on
+  // Linux makes builtin stdint.h's include_next re-enter the guarded builtin
+  // header instead of reaching the platform C headers.
   let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
   if target_os == "macos" {
     let output = Command::new("xcrun")
@@ -198,20 +201,6 @@ fn build_binding() {
     clang_args.push("-isysroot".to_string());
     clang_args.push(sdk_path.trim().to_string());
   } else if target_os == "linux" {
-    // Add clang resource directory for builtin headers (stddef.h, etc)
-    if let Ok(libclang_path) = env::var("LIBCLANG_PATH") {
-      let clang_dir = PathBuf::from(&libclang_path)
-        .parent()
-        .unwrap()
-        .to_path_buf();
-      let clang_bin = clang_dir.join("bin/clang");
-      if let Ok(output) =
-        Command::new(clang_bin).arg("-print-resource-dir").output()
-      {
-        let resource_dir = String::from_utf8(output.stdout).unwrap();
-        clang_args.push(format!("-isystem{}/include", resource_dir.trim()));
-      }
-    }
     // Parse the V8 headers against the musl sysroot. bindgen already targets
     // the musl triple (from $TARGET), so without this it looks for the target
     // arch's glibc multiarch headers, which aren't installed when cross-
