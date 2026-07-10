@@ -6,6 +6,17 @@ V8 Version: 15.0.245.2
 [![crates](https://img.shields.io/crates/v/v8.svg)](https://crates.io/crates/v8)
 [![docs](https://docs.rs/v8/badge.svg)](https://docs.rs/v8)
 
+## Nimbus Fork
+
+This is the Nimbus-maintained rusty_v8 fork based on upstream `v150.1.0`.
+It carries the embedder APIs and release artifacts needed by Nimbus while
+keeping the upstream source and CI topology intact. Nimbus releases use tags
+such as `v150.1.0-nimbus.1`.
+
+This release line is published for forward maintenance and is not consumed by
+Deno 2.9.2, which still uses rusty_v8 149.4. Nimbus continues to consume
+`v149.4.0-nimbus.10` until Deno rolls to V8 150.x.
+
 ## Goals
 
 1. Provide high quality Rust bindings to
@@ -46,7 +57,7 @@ will occur regularly to stay in sync with Chrome's release cycle.
 
 V8 is very large and takes a long time to compile. Many users will prefer to use
 a prebuilt version of V8. We publish static libs for every version of rusty v8
-on [Github](https://github.com/denoland/rusty_v8/releases).
+on [GitHub](https://github.com/nimbus/rusty_v8/releases).
 
 Binaries builds are turned on by default: `cargo build` will initiate a download
 from github to get the static lib. To disable this build using the
@@ -66,7 +77,12 @@ We default to release builds of `v8` due to performance & CI reasons in `deno`.
 
 Tells the build script where to get binary builds from. Understands `http://`
 and `https://` URLs, and file paths. The default is
-https://github.com/denoland/rusty_v8/releases.
+https://github.com/nimbus/rusty_v8/releases.
+
+The default Nimbus release tag is computed as
+`v<CARGO_PKG_VERSION>-nimbus.1`. Set `RUSTY_V8_VERSION` to select a different
+Nimbus release tag without changing the crate version, for example
+`RUSTY_V8_VERSION=150.1.0-nimbus.1`.
 
 File-based mirrors are good for using cached downloads. First, point the
 environment variable to a suitable location:
