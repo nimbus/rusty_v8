@@ -5157,6 +5157,7 @@ fn module_evaluation() {
     assert!(module.script_id().is_some());
     assert!(module.is_source_text_module());
     assert!(!module.is_synthetic_module());
+    assert!(!module.has_top_level_await());
     assert_eq!(v8::ModuleStatus::Uninstantiated, module.get_status());
     module.hash(&mut DefaultHasher::new()); // Should not crash.
 
@@ -5198,6 +5199,7 @@ fn module_stalled_top_level_await() {
     assert!(module.script_id().is_some());
     assert!(module.is_source_text_module());
     assert!(!module.is_synthetic_module());
+    assert!(module.has_top_level_await());
     assert_eq!(v8::ModuleStatus::Uninstantiated, module.get_status());
     module.hash(&mut DefaultHasher::new()); // Should not crash.
 
