@@ -165,12 +165,13 @@ jobs:
       - name: Download release artifacts
         uses: actions/download-artifact@v8
         with:
-          path: release-assets
+          path: release-artifacts
           pattern: nimbus-rusty-v8-*
-          merge-multiple: true
 
       - name: Generate checksums and verify exact asset contract
-        run: python tools/verify_nimbus_release_assets.py release-assets --write-checksums
+        run: >-
+          python tools/verify_nimbus_release_assets.py release-artifacts
+          --write-checksums --flatten-to release-assets
 
       - name: Publish release
         shell: bash
