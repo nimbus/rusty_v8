@@ -638,10 +638,17 @@ fn static_lib_name(suffix: &str) -> String {
 }
 
 fn prebuilt_version() -> String {
-  env::var("RUSTY_V8_VERSION").unwrap_or_else(|_| {
-    let version = env::var("CARGO_PKG_VERSION").unwrap();
-    format!("{version}-nimbus.1")
-  })
+  resolve_prebuilt_version(
+    &env::var("CARGO_PKG_VERSION").unwrap(),
+    env::var("RUSTY_V8_VERSION").ok(),
+  )
+}
+
+fn resolve_prebuilt_version(
+  package_version: &str,
+  override_version: Option<String>,
+) -> String {
+  override_version.unwrap_or_else(|| format!("{package_version}-nimbus.1"))
 }
 
 fn static_lib_url() -> String {
@@ -1364,5 +1371,17 @@ edge [fontsize=10]
     assert!(files.contains("../../../example/src/input.txt"));
     assert!(files.contains("../../../example/src/count_bytes.py"));
     assert!(!files.contains("obj/hello/hello.o"));
+  }
+
+  #[test]
+  fn test_resolve_nimbus_prebuilt_version() {
+    assert_eq!(
+      resolve_prebuilt_version("150.1.0", None),
+      "150.1.0-nimbus.1"
+    );
+    assert_eq!(
+      resolve_prebuilt_version("150.1.0", Some("150.1.0-nimbus.7".to_string())),
+      "150.1.0-nimbus.7"
+    );
   }
 }
