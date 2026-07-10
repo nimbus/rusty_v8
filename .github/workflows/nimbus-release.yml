@@ -79,15 +79,15 @@ jobs:
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc-10" >> "$GITHUB_ENV"
           echo "QEMU_LD_PREFIX=/usr/aarch64-linux-gnu" >> "$GITHUB_ENV"
 
-      - name: Install Clang 19
+      - name: Install Clang 21
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main" | sudo tee /etc/apt/sources.list.d/llvm-toolchain-jammy-19.list
+          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-21 main" | sudo tee /etc/apt/sources.list.d/llvm-toolchain-jammy-21.list
           curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/llvm-snapshot.gpg >/dev/null
           sudo apt-get update
-          sudo apt-get install -y clang-19 clang-format-19 libclang-19-dev lld-19
-          echo "LIBCLANG_PATH=/usr/lib/llvm-19/lib" >> "$GITHUB_ENV"
+          sudo apt-get install -y clang-21 clang-format-21 libclang-21-dev lld-21
+          echo "LIBCLANG_PATH=/usr/lib/llvm-21/lib" >> "$GITHUB_ENV"
 
       - name: Set LIBCLANG_PATH on macOS
         if: runner.os == 'macOS'
