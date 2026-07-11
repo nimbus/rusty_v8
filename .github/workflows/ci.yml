@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, "nimbus/**"]
     tags: ["**"]
   pull_request:
     branches: [main]
@@ -27,25 +27,25 @@ jobs:
         !contains(github.event.pull_request.labels.*.name, 'no-fail-fast') }}
       matrix:
         config:
-          - os: macos-15-large
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             variant: debug
             v8_enable_pointer_compression: false
             cargo: cargo
 
-          - os: macos-15-large
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             variant: release
             v8_enable_pointer_compression: false
             cargo: cargo
 
-          - os: macos-15-large
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             variant: debug
             v8_enable_pointer_compression: true
             cargo: cargo
 
-          - os: macos-15-large
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             variant: release
             v8_enable_pointer_compression: true
@@ -149,14 +149,14 @@ jobs:
             cargo: cargo
 
           # simdutf builds
-          - os: macos-15-large
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             variant: debug
             v8_enable_pointer_compression: false
             simdutf: true
             cargo: cargo
 
-          - os: macos-15-large
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             variant: release
             v8_enable_pointer_compression: false
