@@ -9,14 +9,14 @@ use std::mem::transmute;
 use std::ops::Deref;
 use std::ptr::NonNull;
 
+use crate::Data;
+use crate::Isolate;
+use crate::IsolateHandle;
 use crate::isolate::IsolateLiveness;
 use crate::isolate::RealIsolate;
 use crate::scope::GetIsolate;
 use crate::scope::PinScope;
 use crate::support::Opaque;
-use crate::Data;
-use crate::Isolate;
-use crate::IsolateHandle;
 
 unsafe extern "C" {
   fn v8__Local__New(

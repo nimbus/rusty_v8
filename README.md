@@ -2,20 +2,25 @@
 
 V8 Version: 15.0.245.2
 
-[![nimbus release assets](https://github.com/nimbus/rusty_v8/actions/workflows/nimbus-release.yml/badge.svg?branch=nimbus%2Fv150.1.0)](https://github.com/nimbus/rusty_v8/actions/workflows/nimbus-release.yml)
+[![nimbus release assets](https://github.com/nimbus/rusty_v8/actions/workflows/nimbus-release.yml/badge.svg?branch=nimbus%2Fv150.2.0)](https://github.com/nimbus/rusty_v8/actions/workflows/nimbus-release.yml)
 [![crates](https://img.shields.io/crates/v/v8.svg)](https://crates.io/crates/v8)
 [![docs](https://docs.rs/v8/badge.svg)](https://docs.rs/v8)
 
 ## Nimbus Fork
 
-This is the Nimbus-maintained rusty_v8 fork based on upstream `v150.1.0`.
+This is the Nimbus-maintained rusty_v8 fork based on upstream `v150.2.0`.
 It carries the embedder APIs and release artifacts needed by Nimbus while
 keeping the upstream source and CI topology intact. Nimbus releases use tags
-such as `v150.1.0-nimbus.1`.
+such as `v150.2.0-nimbus.1`.
 
 This release line is published for forward maintenance and is not consumed by
-Deno 2.9.2, which still uses rusty_v8 149.4. Nimbus continues to consume
+Deno 2.9.3, which still uses rusty_v8 149.4. Nimbus continues to consume
 `v149.4.0-nimbus.10` until Deno rolls to V8 150.x.
+
+The upstream WebAssembly trap-handler binding is exposed but not activated by
+this fork. Activation changes process-global signal handling and requires an
+embedder-owned coordination decision across V8, Wasmtime, sandboxing, and
+crash handling.
 
 ## Goals
 
@@ -82,7 +87,7 @@ https://github.com/nimbus/rusty_v8/releases.
 The default Nimbus release tag is computed as
 `v<CARGO_PKG_VERSION>-nimbus.1`. Set `RUSTY_V8_VERSION` to select a different
 Nimbus release tag without changing the crate version, for example
-`RUSTY_V8_VERSION=150.1.0-nimbus.1`.
+`RUSTY_V8_VERSION=150.2.0-nimbus.1`.
 
 File-based mirrors are good for using cached downloads. First, point the
 environment variable to a suitable location:
@@ -97,7 +102,7 @@ Then populate the cache:
 
 # see https://github.com/nimbus/rusty_v8/releases
 
-for REL in v150.1.0-nimbus.1; do
+for REL in v150.2.0-nimbus.1; do
   mkdir -p $RUSTY_V8_MIRROR/$REL
   for FILE in \
     librusty_v8_release_x86_64-unknown-linux-gnu.a.gz \
@@ -111,6 +116,11 @@ for REL in v150.1.0-nimbus.1; do
   done
 done
 ```
+
+Release prebuilts also include normal and `simdutf` archives plus bindings for
+`x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`. These are
+cross-compiled, build-only configurations; pointer-compressed and sandboxed
+musl prebuilts are not published.
 
 ## The `RUSTY_V8_ARCHIVE` environment variable
 
@@ -257,15 +267,15 @@ location in your `.cargo` folder. Running `cargo build -v -v` will print two
 lines that you can use to determine the correct file and cache location:
 
 ```
-[v8 150.1.0] static lib URL: https://github.com/nimbus/rusty_v8/releases/download/v150.1.0-nimbus.1/librusty_v8_release_aarch64-apple-darwin.a.gz
-[v8 150.1.0] Looking for download in '"/Users/<name>/.cargo/.rusty_v8/https___github_com_nimbus_rusty_v8_releases_download_v150_1_0_nimbus_1_librusty_v8_release_aarch64_apple_darwin_a_gz"'
+[v8 150.2.0] static lib URL: https://github.com/nimbus/rusty_v8/releases/download/v150.2.0-nimbus.1/librusty_v8_release_aarch64-apple-darwin.a.gz
+[v8 150.2.0] Looking for download in '"/Users/<name>/.cargo/.rusty_v8/https___github_com_nimbus_rusty_v8_releases_download_v150_2_0_nimbus_1_librusty_v8_release_aarch64_apple_darwin_a_gz"'
 ```
 
 Given the above log output, use `curl` to download the file like so:
 
 ```
-curl -L https://github.com/nimbus/rusty_v8/releases/download/v150.1.0-nimbus.1/librusty_v8_release_aarch64-apple-darwin.a.gz >
-  /Users/<name>/.cargo/.rusty_v8/https___github_com_nimbus_rusty_v8_releases_download_v150_1_0_nimbus_1_librusty_v8_release_aarch64_apple_darwin_a_gz
+curl -L https://github.com/nimbus/rusty_v8/releases/download/v150.2.0-nimbus.1/librusty_v8_release_aarch64-apple-darwin.a.gz >
+  /Users/<name>/.cargo/.rusty_v8/https___github_com_nimbus_rusty_v8_releases_download_v150_2_0_nimbus_1_librusty_v8_release_aarch64_apple_darwin_a_gz
 ```
 
 ## For maintainers

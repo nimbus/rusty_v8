@@ -11,26 +11,30 @@ permissions:
   contents: read
 
 jobs:
+  release_matrix:
+    name: derive release matrix
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.manifest.outputs.matrix }}
+    steps:
+      - name: Clone repository
+        uses: actions/checkout@v6
+
+      - name: Read release manifest
+        id: manifest
+        shell: bash
+        run: >-
+          echo "matrix=$(python3 tools/nimbus_release_manifest.py
+          --github-matrix)" >> "$GITHUB_OUTPUT"
+
   build:
     name: release ${{ matrix.target }}
+    needs: release_matrix
     runs-on: ${{ matrix.os }}
     timeout-minutes: 240
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: macos-15
-            target: aarch64-apple-darwin
-            pointer_compression: true
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            pointer_compression: true
-          - os: ubuntu-22.04
-            target: aarch64-unknown-linux-gnu
-            pointer_compression: true
-          - os: windows-2022
-            target: x86_64-pc-windows-msvc
-            pointer_compression: false
+      matrix: ${{ fromJSON(needs.release_matrix.outputs.matrix) }}
     env:
       V8_FROM_SOURCE: "true"
       RUSTFLAGS: -D warnings
@@ -54,6 +58,7 @@ jobs:
         uses: dsherret/rust-toolchain-file@v1
 
       - name: Install nextest
+        if: ${{ ! matrix.build_only }}
         uses: taiki-e/install-action@c93ccc03e00cd0e08e494f5fd058a6c55a6a1907 # v2.82.8
         with:
           tool: nextest@0.9.138
@@ -78,6 +83,51 @@ jobs:
             /lib/ld-linux-aarch64.so.1
           echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc-10" >> "$GITHUB_ENV"
           echo "QEMU_LD_PREFIX=/usr/aarch64-linux-gnu" >> "$GITHUB_ENV"
+
+      - name: Install musl cross compilation toolchain
+        if: contains(matrix.target, '-linux-musl')
+        shell: bash
+        run: |
+          rustup target add ${{ matrix.target }}
+
+          # V8 target objects use musl while executable build tools remain
+          # glibc-hosted. Assemble only the target headers and libraries.
+          SYSROOT="${HOME}/musl-sysroot"
+          case "${{ matrix.target }}" in
+            x86_64-*)
+              sudo apt-get update
+              sudo apt-get install -yq \
+                --no-install-suggests --no-install-recommends \
+                musl-tools musl-dev
+              mkdir -p "${SYSROOT}/usr/include" "${SYSROOT}/usr/lib"
+              cp -a /usr/include/x86_64-linux-musl/. \
+                "${SYSROOT}/usr/include/"
+              cp -a /usr/lib/x86_64-linux-musl/. \
+                "${SYSROOT}/usr/lib/"
+              cp -a /usr/include/linux "${SYSROOT}/usr/include/"
+              cp -a /usr/include/asm-generic "${SYSROOT}/usr/include/"
+              cp -a /usr/include/x86_64-linux-gnu/asm \
+                "${SYSROOT}/usr/include/"
+              ;;
+            aarch64-*)
+              ALPINE=v3.21
+              MIRROR="https://dl-cdn.alpinelinux.org/alpine/${ALPINE}/main"
+              APK_VER=$(curl -fsSL \
+                "${MIRROR}/x86_64/APKINDEX.tar.gz" \
+                | tar -xzO APKINDEX \
+                | awk -v RS='' -v FS='\n' \
+                  '{p="";v="";for(i=1;i<=NF;i++){if($i~/^P:/)p=substr($i,3);if($i~/^V:/)v=substr($i,3)}if(p=="apk-tools-static")print v}')
+              curl -fsSLo /tmp/apk.apk \
+                "${MIRROR}/x86_64/apk-tools-static-${APK_VER}.apk"
+              tar -xzf /tmp/apk.apk -C /tmp sbin/apk.static
+              mkdir -p "${SYSROOT}/etc/apk"
+              /tmp/sbin/apk.static --arch aarch64 -X "${MIRROR}" \
+                --root "${SYSROOT}" --initdb --allow-untrusted \
+                add musl-dev linux-headers
+              ;;
+          esac
+
+          echo "RUSTY_V8_MUSL_SYSROOT=${SYSROOT}" >> "$GITHUB_ENV"
 
       - name: Install Clang 21
         if: runner.os == 'Linux'
@@ -104,18 +154,30 @@ jobs:
         run: cargo fmt --check
 
       - name: Build and test default release
+        if: ${{ ! matrix.build_only }}
         run: cargo nextest run --all-targets --locked --release --target ${{ matrix.target }}
 
+      - name: Build default release (build-only)
+        if: matrix.build_only
+        run: cargo build --locked --release --target ${{ matrix.target }}
+
       - name: Clippy default release
+        if: ${{ ! matrix.build_only }}
         run: cargo clippy --all-targets --locked --release --target ${{ matrix.target }} -- -D clippy::all
 
       - name: Package default release
         run: python tools/package_nimbus_release_assets.py --target ${{ matrix.target }}
 
       - name: Build and test simdutf release
+        if: ${{ ! matrix.build_only }}
         run: cargo nextest run --all-targets --locked --release --target ${{ matrix.target }} --features simdutf
 
+      - name: Build simdutf release (build-only)
+        if: matrix.build_only
+        run: cargo build --locked --release --target ${{ matrix.target }} --features simdutf
+
       - name: Clippy simdutf release
+        if: ${{ ! matrix.build_only }}
         run: cargo clippy --all-targets --locked --release --target ${{ matrix.target }} --features simdutf -- -D clippy::all
 
       - name: Package simdutf release
