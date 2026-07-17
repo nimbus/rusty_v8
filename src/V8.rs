@@ -291,6 +291,15 @@ pub fn enable_web_assembly_trap_handler(use_v8_signal_handler: bool) -> bool {
 }
 
 #[cfg(test)]
+mod test_trap_handler_binding {
+  #[test]
+  fn binding_has_expected_signature_without_activation() {
+    let binding: fn(bool) -> bool = super::enable_web_assembly_trap_handler;
+    let _ = binding;
+  }
+}
+
+#[cfg(test)]
 mod test_sandbox_use {
   // __IsSandboxEnabled is used for testing that sandbox is actually
   // enabled and is not a stable API

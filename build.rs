@@ -40,7 +40,9 @@ fn main() {
     "OUT_DIR",
     "RUSTY_V8_ARCHIVE",
     "RUSTY_V8_MIRROR",
+    "RUSTY_V8_MUSL_SYSROOT",
     "RUSTY_V8_SRC_BINDING_PATH",
+    "RUSTY_V8_VERSION",
     "SCCACHE",
     "V8_FORCE_DEBUG",
     "V8_FROM_SOURCE",
@@ -667,26 +669,81 @@ fn prebuilt_profile() -> &'static str {
 }
 
 fn prebuilt_features_suffix() -> String {
+  prebuilt_features_suffix_from_flags(
+    env::var("CARGO_FEATURE_V8_ENABLE_POINTER_COMPRESSION").is_ok(),
+    env::var("CARGO_FEATURE_V8_ENABLE_SANDBOX").is_ok(),
+    env::var("CARGO_FEATURE_SIMDUTF").is_ok(),
+  )
+}
+
+fn prebuilt_features_suffix_from_flags(
+  pointer_compression: bool,
+  sandbox: bool,
+  simdutf: bool,
+) -> String {
   let mut features = String::new();
-  if env::var("CARGO_FEATURE_V8_ENABLE_POINTER_COMPRESSION").is_ok() {
+  if pointer_compression {
     features.push_str("_ptrcomp");
   }
-  if env::var("CARGO_FEATURE_V8_ENABLE_SANDBOX").is_ok() {
+  if sandbox {
     features.push_str("_sandbox");
   }
-  if env::var("CARGO_FEATURE_SIMDUTF").is_ok() {
+  if simdutf {
     features.push_str("_simdutf");
   }
   features
 }
 
 fn static_lib_name(suffix: &str) -> String {
-  let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
-  if target_os == "windows" {
+  static_lib_name_for_target(&env::var("TARGET").unwrap(), suffix)
+}
+
+fn static_lib_name_for_target(target: &str, suffix: &str) -> String {
+  if target.contains("windows") {
     format!("rusty_v8{suffix}.lib")
   } else {
     format!("librusty_v8{suffix}.a")
   }
+}
+
+fn validate_prebuilt_configuration(
+  target: &str,
+  features: &str,
+) -> Result<(), String> {
+  if target.ends_with("-linux-musl")
+    && (features.contains("_ptrcomp") || features.contains("_sandbox"))
+  {
+    return Err(format!(
+      "Nimbus does not publish pointer-compressed or sandboxed rusty_v8 \
+       prebuilts for musl target {target}; set V8_FROM_SOURCE=1 or provide \
+       both RUSTY_V8_ARCHIVE and RUSTY_V8_SRC_BINDING_PATH"
+    ));
+  }
+  Ok(())
+}
+
+fn prebuilt_archive_name(
+  target: &str,
+  profile: &str,
+  features: &str,
+) -> Result<String, String> {
+  validate_prebuilt_configuration(target, features)?;
+  Ok(format!(
+    "{}.gz",
+    static_lib_name_for_target(
+      target,
+      &format!("{features}_{profile}_{target}"),
+    )
+  ))
+}
+
+fn prebuilt_binding_name(
+  target: &str,
+  profile: &str,
+  features: &str,
+) -> Result<String, String> {
+  validate_prebuilt_configuration(target, features)?;
+  Ok(format!("src_binding{features}_{profile}_{target}.rs"))
 }
 
 fn prebuilt_version() -> String {
@@ -714,10 +771,9 @@ fn static_lib_url() -> String {
   let target = env::var("TARGET").unwrap();
   let profile = prebuilt_profile();
   let features = prebuilt_features_suffix();
-  format!(
-    "{base}/v{version}/{}.gz",
-    static_lib_name(&format!("{features}_{profile}_{target}")),
-  )
+  let archive = prebuilt_archive_name(&target, profile, &features)
+    .unwrap_or_else(|error| panic!("{error}"));
+  format!("{base}/v{version}/{archive}")
 }
 
 fn static_lib_path() -> PathBuf {
@@ -1016,7 +1072,8 @@ fn print_prebuilt_src_binding_path() {
   let target = env::var("TARGET").unwrap();
   let profile = prebuilt_profile();
   let features = prebuilt_features_suffix();
-  let name = format!("src_binding{features}_{profile}_{target}.rs");
+  let name = prebuilt_binding_name(&target, profile, &features)
+    .unwrap_or_else(|error| panic!("{error}"));
 
   let src_binding_path = get_dirs().root.join("gen").join(name.clone());
 
@@ -1428,12 +1485,40 @@ edge [fontsize=10]
   #[test]
   fn test_resolve_nimbus_prebuilt_version() {
     assert_eq!(
-      resolve_prebuilt_version("150.1.0", None),
-      "150.1.0-nimbus.1"
+      resolve_prebuilt_version("150.2.0", None),
+      "150.2.0-nimbus.1"
     );
     assert_eq!(
-      resolve_prebuilt_version("150.1.0", Some("150.1.0-nimbus.7".to_string())),
-      "150.1.0-nimbus.7"
+      resolve_prebuilt_version("150.2.0", Some("150.2.0-nimbus.7".to_string())),
+      "150.2.0-nimbus.7"
     );
+  }
+
+  #[test]
+  fn test_musl_prebuilt_selectors() {
+    for target in ["x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl"] {
+      assert_eq!(
+        prebuilt_archive_name(target, "release", "").unwrap(),
+        format!("librusty_v8_release_{target}.a.gz")
+      );
+      assert_eq!(
+        prebuilt_archive_name(target, "release", "_simdutf").unwrap(),
+        format!("librusty_v8_simdutf_release_{target}.a.gz")
+      );
+      assert_eq!(
+        prebuilt_binding_name(target, "release", "_simdutf").unwrap(),
+        format!("src_binding_simdutf_release_{target}.rs")
+      );
+      assert!(
+        prebuilt_archive_name(target, "release", "_ptrcomp_simdutf")
+          .unwrap_err()
+          .contains("does not publish")
+      );
+      assert!(
+        prebuilt_binding_name(target, "release", "_sandbox")
+          .unwrap_err()
+          .contains("does not publish")
+      );
+    }
   }
 }

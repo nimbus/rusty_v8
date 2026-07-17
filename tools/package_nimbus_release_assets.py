@@ -8,6 +8,8 @@ import gzip
 import shutil
 from pathlib import Path
 
+from nimbus_release_manifest import asset_names, validate_configuration
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()
@@ -20,6 +22,11 @@ def main() -> int:
     parser.add_argument("--target-dir", type=Path, default=Path("target"))
     parser.add_argument("--output-dir", type=Path, default=Path("release-assets"))
     args = parser.parse_args()
+
+    try:
+        validate_configuration(args.target, args.features_suffix)
+    except ValueError as error:
+        parser.error(str(error))
 
     windows = "windows" in args.target
     library_name = "rusty_v8.lib" if windows else "librusty_v8.a"
@@ -42,11 +49,7 @@ def main() -> int:
         raise SystemExit(f"missing build outputs: {library} or {binding}")
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    stem = "rusty_v8" if windows else "librusty_v8"
-    extension = "lib" if windows else "a"
-    feature_part = f"_{args.features_suffix}" if args.features_suffix else ""
-    archive_name = f"{stem}{feature_part}_release_{args.target}.{extension}.gz"
-    binding_name = f"src_binding{feature_part}_release_{args.target}.rs"
+    archive_name, binding_name = asset_names(args.target, args.features_suffix)
 
     with library.open("rb") as source, (args.output_dir / archive_name).open(
         "wb"
