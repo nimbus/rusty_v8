@@ -31,7 +31,9 @@ jobs:
     name: release ${{ matrix.target }}
     needs: release_matrix
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 240
+    # A cold AArch64 GNU run builds and tests default, simdutf, and ptrcomp
+    # configurations sequentially; the candidate proof exceeded four hours.
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.release_matrix.outputs.matrix) }}
