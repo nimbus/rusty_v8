@@ -19,6 +19,7 @@ from nimbus_release_manifest import (  # noqa: E402
     asset_names,
     expected_assets,
     github_matrix,
+    release_revision,
     validate_configuration,
     validate_release_tag,
 )
@@ -81,16 +82,18 @@ class ManifestTests(unittest.TestCase):
             asset_names("mips64-unknown-linux-musl", "")
 
     def test_release_tag_must_match_crate_version(self) -> None:
-        validate_release_tag("v150.4.0-nimbus.1", "150.4.0")
-        validate_release_tag("v150.4.0-nimbus.27", "150.4.0")
+        self.assertEqual(release_revision(), "1")
+        validate_release_tag("v150.4.0-nimbus.1", "150.4.0", "1")
+        validate_release_tag("v150.4.0-nimbus.27", "150.4.0", "27")
         for tag in (
             "v150.4.1-nimbus.1",
             "v150.4.0-nimbus.next",
             "v150.4.0-nimbus.0",
             "v150.4.0-nimbus.01",
+            "v150.4.0-nimbus.2",
         ):
             with self.assertRaisesRegex(ValueError, "must match"):
-                validate_release_tag(tag, "150.4.0")
+                validate_release_tag(tag, "150.4.0", "1")
 
 
 class VerifierTests(unittest.TestCase):

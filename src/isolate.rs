@@ -2625,7 +2625,9 @@ impl AsMut<Isolate> for Isolate {
 /// Unlike [`OwnedIsolate`], this isolate does not automatically enter itself
 /// upon creation. Instead, you must use a [`Locker`] to access it:
 ///
-/// ```ignore
+/// ```no_run
+/// use std::pin::pin;
+///
 /// // SAFETY: all V8 value access stays within a Locker below.
 /// let mut isolate = unsafe {
 ///     v8::Isolate::new_unentered(Default::default())
@@ -2634,7 +2636,8 @@ impl AsMut<Isolate> for Isolate {
 /// // Access the isolate through a Locker
 /// {
 ///     let mut locker = v8::Locker::new(&mut isolate);
-///     let scope = &mut v8::HandleScope::new(&mut *locker);
+///     let scope = pin!(v8::HandleScope::new(&mut *locker));
+///     let scope = &mut scope.init();
 ///     // ... use scope ...
 /// }
 ///

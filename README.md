@@ -84,10 +84,11 @@ Tells the build script where to get binary builds from. Understands `http://`
 and `https://` URLs, and file paths. The default is
 https://github.com/nimbus/rusty_v8/releases.
 
-The default Nimbus release tag is computed as
-`v<CARGO_PKG_VERSION>-nimbus.1`. Set `RUSTY_V8_VERSION` to select a different
-Nimbus release tag without changing the crate version, for example
-`RUSTY_V8_VERSION=150.4.0-nimbus.1`.
+The default Nimbus release tag combines `CARGO_PKG_VERSION` with the revision
+in `tools/nimbus_release_revision`. Bump that source-controlled revision before
+you create a later Nimbus tag. The release workflow rejects a tag that does not
+match both values. Set `RUSTY_V8_VERSION` only for an explicit prebuilt
+override, for example `RUSTY_V8_VERSION=150.4.0-nimbus.1`.
 
 File-based mirrors are good for using cached downloads. First, point the
 environment variable to a suitable location:

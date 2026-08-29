@@ -67,12 +67,27 @@ def crate_version() -> str:
     return str(package["version"])
 
 
-def validate_release_tag(tag: str, package_version: str) -> None:
-    pattern = rf"v{re.escape(package_version)}-nimbus\.[1-9][0-9]*"
+def release_revision() -> str:
+    path = Path(__file__).with_name("nimbus_release_revision")
+    revision = path.read_text(encoding="utf-8").strip()
+    if re.fullmatch(r"[1-9][0-9]*", revision) is None:
+        raise ValueError(
+            f"{path}: expected a positive integer without leading zeros"
+        )
+    return revision
+
+
+def validate_release_tag(
+    tag: str, package_version: str, expected_revision: str
+) -> None:
+    pattern = (
+        rf"v{re.escape(package_version)}-nimbus\."
+        rf"{re.escape(expected_revision)}"
+    )
     if re.fullmatch(pattern, tag) is None:
         raise ValueError(
-            f"release tag {tag!r} must match "
-            f"v{package_version}-nimbus.<positive-integer>"
+            f"release tag {tag!r} must match the source revision "
+            f"v{package_version}-nimbus.{expected_revision}"
         )
 
 
@@ -145,7 +160,9 @@ def main() -> int:
         print(len(expected_assets()))
     else:
         try:
-            validate_release_tag(args.verify_tag, crate_version())
+            validate_release_tag(
+                args.verify_tag, crate_version(), release_revision()
+            )
         except ValueError as error:
             parser.error(str(error))
         print(f"verified release tag {args.verify_tag}")

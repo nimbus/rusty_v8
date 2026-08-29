@@ -24,6 +24,7 @@ fn main() {
   println!("cargo:rerun-if-changed=.gn");
   println!("cargo:rerun-if-changed=BUILD.gn");
   println!("cargo:rerun-if-changed=src/binding.cc");
+  println!("cargo:rerun-if-changed=tools/nimbus_release_revision");
 
   // These are all the environment variables that we check. This is
   // probably more than what is needed, but missing an important
@@ -793,14 +794,28 @@ fn prebuilt_version() -> String {
   resolve_prebuilt_version(
     &env::var("CARGO_PKG_VERSION").unwrap(),
     env::var("RUSTY_V8_VERSION").ok(),
+    include_str!("tools/nimbus_release_revision").trim(),
   )
 }
 
 fn resolve_prebuilt_version(
   package_version: &str,
   override_version: Option<String>,
+  release_revision: &str,
 ) -> String {
-  override_version.unwrap_or_else(|| format!("{package_version}-nimbus.1"))
+  assert!(
+    valid_nimbus_release_revision(release_revision),
+    "tools/nimbus_release_revision must contain a positive integer without \
+     leading zeros"
+  );
+  override_version
+    .unwrap_or_else(|| format!("{package_version}-nimbus.{release_revision}"))
+}
+
+fn valid_nimbus_release_revision(revision: &str) -> bool {
+  let mut bytes = revision.bytes();
+  matches!(bytes.next(), Some(b'1'..=b'9'))
+    && bytes.all(|byte| byte.is_ascii_digit())
 }
 
 const DEFAULT_NIMBUS_PREBUILT_BASE: &str =
@@ -1323,7 +1338,11 @@ fn print_packaged_src_binding_path() {
   let profile = prebuilt_profile();
   let features = prebuilt_features_suffix();
   let name = src_binding_name(&target, profile, &features);
-  let src_binding_path = packaged_binding_path(&get_dirs().root, &name);
+  let src_binding_path = preferred_existing_binding_path(
+    &PathBuf::from(env::var_os("OUT_DIR").unwrap()),
+    &get_dirs().root,
+    &name,
+  );
 
   println!(
     "cargo:rustc-env=RUSTY_V8_SRC_BINDING_PATH={}",
@@ -1337,6 +1356,19 @@ fn downloaded_binding_path(out_dir: &Path, name: &str) -> PathBuf {
 
 fn packaged_binding_path(root: &Path, name: &str) -> PathBuf {
   root.join("gen").join(name)
+}
+
+fn preferred_existing_binding_path(
+  out_dir: &Path,
+  root: &Path,
+  name: &str,
+) -> PathBuf {
+  let downloaded = downloaded_binding_path(out_dir, name);
+  if downloaded.is_file() {
+    downloaded
+  } else {
+    packaged_binding_path(root, name)
+  }
 }
 
 // Chromium depot_tools contains helpers
@@ -1743,13 +1775,26 @@ edge [fontsize=10]
   #[test]
   fn test_resolve_nimbus_prebuilt_version() {
     assert_eq!(
-      resolve_prebuilt_version("150.4.0", None),
+      resolve_prebuilt_version("150.4.0", None, "1"),
       "150.4.0-nimbus.1"
     );
     assert_eq!(
-      resolve_prebuilt_version("150.4.0", Some("150.4.0-nimbus.7".to_string())),
+      resolve_prebuilt_version(
+        "150.4.0",
+        Some("150.4.0-nimbus.7".to_string()),
+        "1"
+      ),
       "150.4.0-nimbus.7"
     );
+    assert_eq!(
+      resolve_prebuilt_version("150.4.0", None, "7"),
+      "150.4.0-nimbus.7"
+    );
+    assert!(valid_nimbus_release_revision("1"));
+    assert!(valid_nimbus_release_revision("27"));
+    assert!(!valid_nimbus_release_revision("0"));
+    assert!(!valid_nimbus_release_revision("01"));
+    assert!(!valid_nimbus_release_revision("next"));
     assert_eq!(
       prebuilt_asset_url(
         DEFAULT_NIMBUS_PREBUILT_BASE,
@@ -1777,6 +1822,36 @@ edge [fontsize=10]
       src_binding_name("aarch64-apple-ios", "debug", "_sandbox"),
       "src_binding_sandbox_debug_aarch64-apple-ios.rs"
     );
+  }
+
+  #[test]
+  fn test_preferred_existing_binding_path() {
+    const NAME: &str = "src_binding_release_aarch64-apple-darwin.rs";
+    assert_eq!(
+      preferred_existing_binding_path(
+        Path::new("missing/out"),
+        Path::new("crate"),
+        NAME
+      ),
+      Path::new("crate/gen").join(NAME)
+    );
+    let unique = std::time::SystemTime::now()
+      .duration_since(std::time::UNIX_EPOCH)
+      .unwrap()
+      .as_nanos();
+    let out_dir = std::env::temp_dir().join(format!(
+      "rusty-v8-binding-path-{}-{unique}",
+      std::process::id()
+    ));
+    std::fs::create_dir_all(&out_dir).unwrap();
+    let downloaded = downloaded_binding_path(&out_dir, NAME);
+    std::fs::write(&downloaded, "binding").unwrap();
+    assert_eq!(
+      preferred_existing_binding_path(&out_dir, Path::new("crate"), NAME),
+      downloaded
+    );
+    std::fs::remove_file(&downloaded).unwrap();
+    std::fs::remove_dir(&out_dir).unwrap();
   }
 
   #[test]
