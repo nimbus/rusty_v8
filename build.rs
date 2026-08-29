@@ -5,6 +5,8 @@ use miniz_oxide::MZStatus;
 use miniz_oxide::StreamResult;
 use miniz_oxide::inflate::stream::InflateState;
 use miniz_oxide::inflate::stream::inflate;
+use sha2::Digest;
+use sha2::Sha256;
 use std::collections::HashSet;
 use std::env;
 use std::fs;
@@ -850,17 +852,154 @@ fn replace_non_alphanumeric(url: &str) -> String {
     .collect()
 }
 
-fn download_file(url: &str, filename: &Path) {
-  if !url.starts_with("http:") && !url.starts_with("https:") {
-    copy_archive(url, filename);
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ChecksumPolicy {
+  Required,
+  TrustedCustomArchive,
+}
+
+fn download_file(url: &str, filename: &Path, checksum: ChecksumPolicy) {
+  if cached_download_matches(url, filename, checksum) {
     return;
   }
 
-  // Checksum (i.e: url) to avoid re-downloads
-  match fs::read_to_string(static_checksum_path(filename)) {
-    Ok(c) if c == url => return,
-    _ => {}
+  let asset_tmp = filename.with_extension("asset.tmp");
+  let sidecar_tmp = filename.with_extension("sha256.tmp");
+  for path in [&asset_tmp, &sidecar_tmp] {
+    if path.exists() {
+      println!("Deleting old tmpfile {}", path.display());
+      fs::remove_file(path).unwrap();
+    }
+  }
+
+  download_to_path(url, &asset_tmp);
+  let remote_digest = match checksum {
+    ChecksumPolicy::Required => {
+      let sidecar_url = format!("{url}.sha256");
+      download_to_path(&sidecar_url, &sidecar_tmp);
+      let expected_digest = parse_sha256_sidecar(
+        &fs::read_to_string(&sidecar_tmp).unwrap(),
+        asset_name_from_url(url),
+      )
+      .unwrap_or_else(|error| {
+        panic!("invalid checksum sidecar {sidecar_url}: {error}")
+      });
+      let actual_digest = sha256_file(&asset_tmp).unwrap();
+      assert_eq!(
+        actual_digest, expected_digest,
+        "SHA-256 mismatch for V8 prebuilt asset {url}"
+      );
+      expected_digest
+    }
+    ChecksumPolicy::TrustedCustomArchive => "trusted-custom-archive".into(),
   };
+
+  copy_archive(&asset_tmp.to_string_lossy(), filename);
+  let local_digest = sha256_file(filename).unwrap();
+  fs::write(
+    static_checksum_path(filename),
+    format!("{url}\n{remote_digest}\n{local_digest}\n"),
+  )
+  .unwrap();
+  fs::remove_file(&asset_tmp).unwrap();
+  if sidecar_tmp.exists() {
+    fs::remove_file(&sidecar_tmp).unwrap();
+  }
+
+  assert!(filename.exists());
+  assert!(static_checksum_path(filename).exists());
+  assert!(!asset_tmp.exists());
+  assert!(!sidecar_tmp.exists());
+}
+
+fn cached_download_matches(
+  url: &str,
+  filename: &Path,
+  checksum: ChecksumPolicy,
+) -> bool {
+  let Ok(record) = fs::read_to_string(static_checksum_path(filename)) else {
+    return false;
+  };
+  let mut lines = record.lines();
+  let Some(recorded_url) = lines.next() else {
+    return false;
+  };
+  let Some(remote_digest) = lines.next() else {
+    return false;
+  };
+  let Some(local_digest) = lines.next() else {
+    return false;
+  };
+  let remote_digest_matches_policy = match checksum {
+    ChecksumPolicy::Required => is_sha256_digest(remote_digest),
+    ChecksumPolicy::TrustedCustomArchive => {
+      remote_digest == "trusted-custom-archive"
+    }
+  };
+  if recorded_url != url
+    || !remote_digest_matches_policy
+    || !is_sha256_digest(local_digest)
+    || lines.next().is_some()
+    || !filename.is_file()
+  {
+    return false;
+  }
+  sha256_file(filename).is_ok_and(|digest| digest == local_digest)
+}
+
+fn asset_name_from_url(url: &str) -> &str {
+  let path = url.split(['?', '#']).next().unwrap();
+  path
+    .rsplit('/')
+    .next()
+    .filter(|name| !name.is_empty())
+    .unwrap()
+}
+
+fn parse_sha256_sidecar(
+  contents: &str,
+  expected_asset_name: &str,
+) -> Result<String, String> {
+  let mut fields = contents.split_whitespace();
+  let digest = fields.next().ok_or("missing digest")?;
+  let asset_name = fields.next().ok_or("missing asset name")?;
+  if fields.next().is_some() {
+    return Err("unexpected trailing fields".into());
+  }
+  if !is_sha256_digest(digest) {
+    return Err("digest must contain exactly 64 hexadecimal digits".into());
+  }
+  if asset_name != expected_asset_name {
+    return Err(format!(
+      "sidecar names {asset_name}, expected {expected_asset_name}"
+    ));
+  }
+  Ok(digest.to_ascii_lowercase())
+}
+
+fn is_sha256_digest(value: &str) -> bool {
+  value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn sha256_file(path: &Path) -> io::Result<String> {
+  let mut file = fs::File::open(path)?;
+  let mut hasher = Sha256::new();
+  let mut buffer = [0_u8; 64 * 1024];
+  loop {
+    let read = file.read(&mut buffer)?;
+    if read == 0 {
+      break;
+    }
+    hasher.update(&buffer[..read]);
+  }
+  Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn download_to_path(url: &str, destination: &Path) {
+  if !url.starts_with("http:") && !url.starts_with("https:") {
+    copy_file_contents(Path::new(url), destination);
+    return;
+  }
 
   // If there is a `.cargo/.rusty_v8/<escaped URL>` file, use that instead
   // of downloading.
@@ -868,15 +1007,9 @@ fn download_file(url: &str, filename: &Path) {
     path = path.join(".rusty_v8").join(replace_non_alphanumeric(url));
     println!("Looking for download in '{path:?}'");
     if path.exists() {
-      copy_archive(&path.to_string_lossy(), filename);
+      copy_file_contents(&path, destination);
       return;
     }
-  }
-
-  let tmpfile = filename.with_extension("tmp");
-  if tmpfile.exists() {
-    println!("Deleting old tmpfile {}", tmpfile.display());
-    fs::remove_file(&tmpfile).unwrap();
   }
 
   // Try downloading with deno first, then python, then curl.
@@ -898,7 +1031,7 @@ fn download_file(url: &str, filename: &Path) {
       // silently falls back to Python/curl.
       .arg("--")
       .arg(url)
-      .arg(&tmpfile)
+      .arg(destination)
       .status()
       .ok()
       .filter(|s| s.success())
@@ -915,7 +1048,7 @@ fn download_file(url: &str, filename: &Path) {
         .arg("--url")
         .arg(url)
         .arg("--filename")
-        .arg(&tmpfile)
+        .arg(destination)
         .status();
 
       // Python is only a required dependency for `V8_FROM_SOURCE` builds.
@@ -927,9 +1060,10 @@ fn download_file(url: &str, filename: &Path) {
           Command::new("curl")
             .arg("-L")
             .arg("-f")
-            .arg("-s")
+            .arg("--silent")
+            .arg("--show-error")
             .arg("-o")
-            .arg(&tmpfile)
+            .arg(destination)
             .arg(url)
             .status()
             .unwrap()
@@ -938,25 +1072,21 @@ fn download_file(url: &str, filename: &Path) {
     }
   };
 
-  // Assert DL was successful
   if !status.success() {
     panic!(
-      "Failed to download V8 prebuilt archive from {url}\n\
-     This is usually because no prebuilt archive is published for your target, \
-     in which case you should compile V8 from source by setting V8_FROM_SOURCE=1. \
-     It can also indicate a network connectivity problem."
+      "Failed to download V8 prebuilt asset from {url}\n\
+       This is usually because no prebuilt is published for your target, \
+       in which case you should compile V8 from source by setting V8_FROM_SOURCE=1. \
+       It can also indicate a network connectivity problem."
     );
   }
-  assert!(tmpfile.exists());
+  assert!(destination.exists());
+}
 
-  // Write checksum (i.e url) & move file
-  fs::write(static_checksum_path(filename), url).unwrap();
-  copy_archive(&tmpfile.to_string_lossy(), filename);
-  fs::remove_file(&tmpfile).unwrap();
-
-  assert!(filename.exists());
-  assert!(static_checksum_path(filename).exists());
-  assert!(!tmpfile.exists());
+fn copy_file_contents(source: &Path, destination: &Path) {
+  let mut source = fs::File::open(source).unwrap();
+  let mut destination = fs::File::create(destination).unwrap();
+  io::copy(&mut source, &mut destination).unwrap();
 }
 
 fn download_static_lib_binaries() {
@@ -967,7 +1097,12 @@ fn download_static_lib_binaries() {
   fs::create_dir_all(&dir).unwrap();
   println!("cargo:rustc-link-search={}", dir.display());
 
-  download_file(&url, &static_lib_path());
+  let checksum = if env::var_os("RUSTY_V8_ARCHIVE").is_some() {
+    ChecksumPolicy::TrustedCustomArchive
+  } else {
+    ChecksumPolicy::Required
+  };
+  download_file(&url, &static_lib_path(), checksum);
 }
 
 fn decompress_to_writer<R, W>(input: &mut R, output: &mut W) -> io::Result<()>
@@ -1104,7 +1239,8 @@ fn print_prebuilt_src_binding_path() {
   let target = env::var("TARGET").unwrap();
   let profile = prebuilt_profile();
   let features = prebuilt_features_suffix();
-  let name = src_binding_name(&target, profile, &features);
+  let name = prebuilt_binding_name(&target, profile, &features)
+    .unwrap_or_else(|error| panic!("{error}"));
 
   let src_binding_path = downloaded_binding_path(
     &PathBuf::from(env::var_os("OUT_DIR").unwrap()),
@@ -1114,7 +1250,7 @@ fn print_prebuilt_src_binding_path() {
   let base = prebuilt_base();
   let version = prebuilt_version();
   let url = prebuilt_asset_url(&base, &version, &name);
-  download_file(&url, &src_binding_path);
+  download_file(&url, &src_binding_path, ChecksumPolicy::Required);
 
   println!(
     "cargo:rustc-env=RUSTY_V8_SRC_BINDING_PATH={}",
@@ -1131,8 +1267,7 @@ fn print_packaged_src_binding_path() {
   let target = env::var("TARGET").unwrap();
   let profile = prebuilt_profile();
   let features = prebuilt_features_suffix();
-  let name = prebuilt_binding_name(&target, profile, &features)
-    .unwrap_or_else(|error| panic!("{error}"));
+  let name = src_binding_name(&target, profile, &features);
   let src_binding_path = packaged_binding_path(&get_dirs().root, &name);
 
   println!(
@@ -1648,5 +1783,62 @@ edge [fontsize=10]
       assert!(error.contains("profile debug"));
       assert!(error.contains("V8_FROM_SOURCE=1"));
     }
+  }
+
+  #[test]
+  fn test_nimbus_prebuilt_checksum_contract() {
+    const DIGEST: &str =
+      "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
+    assert_eq!(
+      parse_sha256_sidecar(&format!("{DIGEST}  asset.bin\n"), "asset.bin")
+        .unwrap(),
+      DIGEST
+    );
+    assert!(
+      parse_sha256_sidecar(&format!("{DIGEST}  different.bin\n"), "asset.bin")
+        .unwrap_err()
+        .contains("expected asset.bin")
+    );
+    assert!(
+      parse_sha256_sidecar("not-a-digest  asset.bin\n", "asset.bin")
+        .unwrap_err()
+        .contains("64 hexadecimal digits")
+    );
+
+    let root = std::env::temp_dir()
+      .join(format!("rusty-v8-checksum-contract-{}", std::process::id()));
+    if root.exists() {
+      fs::remove_dir_all(&root).unwrap();
+    }
+    fs::create_dir_all(&root).unwrap();
+    let asset = root.join("asset.bin");
+    let output = root.join("output.bin");
+    fs::write(&asset, b"abc").unwrap();
+    fs::write(
+      root.join("asset.bin.sha256"),
+      format!("{DIGEST}  asset.bin\n"),
+    )
+    .unwrap();
+
+    download_file(asset.to_str().unwrap(), &output, ChecksumPolicy::Required);
+    assert_eq!(fs::read(&output).unwrap(), b"abc");
+
+    // A modified output must not be accepted as a cache hit.
+    fs::write(&output, b"tampered").unwrap();
+    download_file(asset.to_str().unwrap(), &output, ChecksumPolicy::Required);
+    assert_eq!(fs::read(&output).unwrap(), b"abc");
+
+    let trusted_asset = root.join("trusted.a");
+    let trusted_output = root.join("trusted-output.a");
+    fs::write(&trusted_asset, b"caller-trusted").unwrap();
+    download_file(
+      trusted_asset.to_str().unwrap(),
+      &trusted_output,
+      ChecksumPolicy::TrustedCustomArchive,
+    );
+    assert_eq!(fs::read(&trusted_output).unwrap(), b"caller-trusted");
+
+    fs::remove_dir_all(root).unwrap();
   }
 }

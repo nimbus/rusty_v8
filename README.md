@@ -112,10 +112,12 @@ for REL in v150.4.0-nimbus.1; do
     librusty_v8_ptrcomp_simdutf_release_x86_64-unknown-linux-gnu.a.gz \
     src_binding_ptrcomp_simdutf_release_x86_64-unknown-linux-gnu.rs \
   ; do
-    if [ ! -f $RUSTY_V8_MIRROR/$REL/$FILE ]; then
-      wget -O $RUSTY_V8_MIRROR/$REL/$FILE \
-        https://github.com/nimbus/rusty_v8/releases/download/$REL/$FILE
-    fi
+    for ARTIFACT in "$FILE" "$FILE.sha256"; do
+      if [ ! -f "$RUSTY_V8_MIRROR/$REL/$ARTIFACT" ]; then
+        wget -O "$RUSTY_V8_MIRROR/$REL/$ARTIFACT" \
+          "https://github.com/nimbus/rusty_v8/releases/download/$REL/$ARTIFACT"
+      fi
+    done
   done
 done
 ```
@@ -139,6 +141,10 @@ path. This is useful when you have a prebuilt archive somewhere:
 export RUSTY_V8_ARCHIVE=/path/to/custom_archive.a
 cargo build
 ```
+
+This explicit override is caller-trusted and does not require a checksum
+sidecar. Nimbus release and mirror downloads require and verify the published
+`.sha256` sidecar before the build script uses an asset.
 
 ## Build V8 from Source
 

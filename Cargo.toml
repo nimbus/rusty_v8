@@ -120,6 +120,7 @@ fslock = "0.2"
 which = "6"
 home = "0"
 bindgen = "0.72"
+sha2 = "0.10"
 
 [dev-dependencies]
 miniz_oxide = "0.8.8"
@@ -132,6 +133,7 @@ which = "6"
 home = "0"
 rustversion = "1"
 bindgen = "0.72"
+sha2 = "0.10"
 
 [[example]]
 name = "hello_world"

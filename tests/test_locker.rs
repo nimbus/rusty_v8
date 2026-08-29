@@ -378,7 +378,9 @@ fn assert_forgotten_locker_child_fails(mode: &str) {
 #[test]
 #[ignore = "subprocess-only fixture for forgotten_locker_prevents_isolate_dispose"]
 fn forgotten_locker_dispose_child() {
-  let mode = std::env::var("RUSTY_V8_FORGOTTEN_LOCKER_CHILD").unwrap();
+  let Ok(mode) = std::env::var("RUSTY_V8_FORGOTTEN_LOCKER_CHILD") else {
+    return;
+  };
   let _setup_guard = setup();
   if mode == "same-thread" {
     let mut isolate = new_unentered_isolate();
