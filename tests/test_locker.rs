@@ -4,6 +4,15 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
+struct CrossThreadGlobal {
+  _handle: v8::Global<v8::Object>,
+}
+
+// SAFETY: this test-only wrapper moves one persistent V8 handle to a worker
+// that can only drop it. `Global::drop` acquires the host isolate's V8 Locker
+// before it resets the persistent handle, and the isolate outlives the worker.
+unsafe impl Send for CrossThreadGlobal {}
+
 fn new_unentered_isolate() -> v8::UnenteredIsolate {
   // SAFETY: every test accesses V8 values only while its Locker is active.
   unsafe { v8::Isolate::new_unentered(Default::default()) }
@@ -285,6 +294,46 @@ fn locker_send_isolate_between_threads() {
     let result = script.run(scope).unwrap();
     assert_eq!(result.to_integer(scope).unwrap().value(), 6);
   }
+}
+
+#[test]
+fn persistent_handle_drop_waits_for_active_locker() {
+  let _setup_guard = setup();
+  let mut isolate = new_unentered_isolate();
+  let mut locker = v8::Locker::new(&mut isolate);
+  let global = {
+    let scope = pin!(v8::HandleScope::new(&mut *locker));
+    let scope = &mut scope.init();
+    let context = v8::Context::new(scope, Default::default());
+    let scope = &mut v8::ContextScope::new(scope, context);
+    let object = v8::Object::new(scope);
+    CrossThreadGlobal {
+      _handle: v8::Global::new(scope, object),
+    }
+  };
+
+  let (attempting_tx, attempting_rx) = mpsc::sync_channel(0);
+  let (dropped_tx, dropped_rx) = mpsc::channel();
+  let handle = thread::spawn(move || {
+    attempting_tx.send(()).unwrap();
+    drop(global);
+    dropped_tx.send(()).unwrap();
+  });
+
+  attempting_rx
+    .recv_timeout(Duration::from_secs(10))
+    .expect("worker must reach the persistent-handle drop");
+  assert_eq!(
+    dropped_rx.recv_timeout(Duration::from_millis(250)),
+    Err(mpsc::RecvTimeoutError::Timeout),
+    "persistent-handle drop must block while another thread owns the Locker"
+  );
+
+  drop(locker);
+  dropped_rx
+    .recv_timeout(Duration::from_secs(10))
+    .expect("persistent-handle drop must finish after Locker release");
+  handle.join().unwrap();
 }
 
 #[test]

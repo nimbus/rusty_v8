@@ -876,7 +876,7 @@ fn download_file(url: &str, filename: &Path, checksum: ChecksumPolicy) {
   let remote_digest = match checksum {
     ChecksumPolicy::Required => {
       let sidecar_url = format!("{url}.sha256");
-      download_to_path(&sidecar_url, &sidecar_tmp);
+      download_checksum_sidecar(&sidecar_url, &sidecar_tmp);
       let expected_digest = parse_sha256_sidecar(
         &fs::read_to_string(&sidecar_tmp).unwrap(),
         asset_name_from_url(url),
@@ -1083,10 +1083,34 @@ fn download_to_path(url: &str, destination: &Path) {
   assert!(destination.exists());
 }
 
+fn download_checksum_sidecar(url: &str, destination: &Path) {
+  if !url.starts_with("http:")
+    && !url.starts_with("https:")
+    && !Path::new(url).is_file()
+  {
+    panic!(
+      "Nimbus V8 file mirror is missing the required checksum sidecar at \
+       {url}; mirror each release asset together with its .sha256 file"
+    );
+  }
+  download_to_path(url, destination);
+}
+
 fn copy_file_contents(source: &Path, destination: &Path) {
-  let mut source = fs::File::open(source).unwrap();
-  let mut destination = fs::File::create(destination).unwrap();
-  io::copy(&mut source, &mut destination).unwrap();
+  let mut source_file = fs::File::open(source).unwrap_or_else(|error| {
+    panic!("failed to read {}: {error}", source.display())
+  });
+  let mut destination_file =
+    fs::File::create(destination).unwrap_or_else(|error| {
+      panic!("failed to create {}: {error}", destination.display())
+    });
+  io::copy(&mut source_file, &mut destination_file).unwrap_or_else(|error| {
+    panic!(
+      "failed to copy {} to {}: {error}",
+      source.display(),
+      destination.display()
+    )
+  });
 }
 
 fn download_static_lib_binaries() {
@@ -1805,6 +1829,26 @@ edge [fontsize=10]
         .unwrap_err()
         .contains("64 hexadecimal digits")
     );
+
+    let missing_sidecar_path = std::env::temp_dir().join(format!(
+      "rusty-v8-missing-sidecar-{}-nimbus-v8-asset.a.sha256",
+      std::process::id()
+    ));
+    assert!(!missing_sidecar_path.exists());
+    let missing_sidecar = std::panic::catch_unwind(|| {
+      download_checksum_sidecar(
+        missing_sidecar_path.to_str().unwrap(),
+        Path::new("unused"),
+      );
+    })
+    .unwrap_err();
+    let missing_sidecar = missing_sidecar
+      .downcast_ref::<String>()
+      .map(String::as_str)
+      .or_else(|| missing_sidecar.downcast_ref::<&str>().copied())
+      .unwrap();
+    assert!(missing_sidecar.contains("missing the required checksum sidecar"));
+    assert!(missing_sidecar.contains("nimbus-v8-asset.a.sha256"));
 
     let root = std::env::temp_dir()
       .join(format!("rusty-v8-checksum-contract-{}", std::process::id()));

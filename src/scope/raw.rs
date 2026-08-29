@@ -238,8 +238,9 @@ impl Locker {
   ///
   /// # Safety
   ///
-  /// - The isolate pointer must be valid
-  /// - The isolate must not be locked by another `Locker`
+  /// - The isolate pointer must be valid.
+  /// - The isolate must remain alive while lock acquisition blocks and until
+  ///   this `Locker` is dropped.
   #[inline]
   pub unsafe fn new(isolate: NonNull<RealIsolate>) -> Self {
     Self(
