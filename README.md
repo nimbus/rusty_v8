@@ -168,8 +168,10 @@ sudo apt install libclang-21-dev
 export LIBCLANG_PATH=/usr/lib/llvm-21/lib
 ```
 
-For Windows builds: the 64-bit toolchain needs to be used. 32-bit targets are
-not supported.
+For Windows builds: install the official LLVM 21 x64 toolchain, set
+`LIBCLANG_PATH` to its `bin` directory, and use the 64-bit toolchain. 32-bit
+targets are not supported. Nimbus CI uses the checksum-pinned installer in
+`tools/install_llvm_windows.ps1`.
 
 For Mac builds: You'll need Xcode and Xcode CLT installed. Recent macOS versions
 will also require you to pass PYTHON=python3 because macOS no longer ships with

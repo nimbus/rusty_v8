@@ -152,6 +152,11 @@ jobs:
           brew install llvm@21
           echo "LIBCLANG_PATH=$(brew --prefix llvm@21)/lib" >> "$GITHUB_ENV"
 
+      - name: Install LLVM 21 on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/install_llvm_windows.ps1
+
       - name: Install sccache
         uses: mozilla-actions/sccache-action@v0.0.10
         with:

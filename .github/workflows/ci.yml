@@ -446,6 +446,11 @@ jobs:
           brew install llvm@21
           echo "LIBCLANG_PATH=$(brew --prefix llvm@21)/lib" >> "$GITHUB_ENV"
 
+      - name: Install LLVM 21 (Windows)
+        if: startsWith(matrix.config.os, 'windows')
+        shell: pwsh
+        run: ./tools/install_llvm_windows.ps1
+
       - name: check rust code formatting
         run: cargo fmt --check
 
@@ -651,7 +656,11 @@ jobs:
           . $basename/sccache --start-server
           echo "$(pwd)/$basename" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-      - name: Install Clang
+      - name: Install LLVM 21 for bindgen
+        shell: pwsh
+        run: ./tools/install_llvm_windows.ps1
+
+      - name: Install Chromium Clang
         run: python3 tools/clang/scripts/update.py
 
       - name: Build (cross-compile, no tests)
@@ -753,7 +762,11 @@ jobs:
           . $basename/sccache --start-server
           echo "$(pwd)/$basename" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-      - name: Install Clang
+      - name: Install LLVM 21 for bindgen
+        shell: pwsh
+        run: ./tools/install_llvm_windows.ps1
+
+      - name: Install Chromium Clang
         run: python3 tools/clang/scripts/update.py
 
       - name: Build (cross-compile, no tests)
