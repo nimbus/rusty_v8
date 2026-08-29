@@ -285,11 +285,16 @@ lines that you can use to determine the correct file and cache location:
 [v8 150.4.0] Looking for download in '"/Users/<name>/.cargo/.rusty_v8/https___github_com_nimbus_rusty_v8_releases_download_v150_4_0_nimbus_1_librusty_v8_release_aarch64_apple_darwin_a_gz"'
 ```
 
-Given the above log output, use `curl` to download the file like so:
+Given the above log output, cache both the asset and its required checksum
+sidecar under their independently escaped URLs:
 
 ```
-curl -L https://github.com/nimbus/rusty_v8/releases/download/v150.4.0-nimbus.1/librusty_v8_release_aarch64-apple-darwin.a.gz >
-  /Users/<name>/.cargo/.rusty_v8/https___github_com_nimbus_rusty_v8_releases_download_v150_4_0_nimbus_1_librusty_v8_release_aarch64_apple_darwin_a_gz
+curl -L \
+  -o /Users/<name>/.cargo/.rusty_v8/https___github_com_nimbus_rusty_v8_releases_download_v150_4_0_nimbus_1_librusty_v8_release_aarch64_apple_darwin_a_gz \
+  https://github.com/nimbus/rusty_v8/releases/download/v150.4.0-nimbus.1/librusty_v8_release_aarch64-apple-darwin.a.gz
+curl -L \
+  -o /Users/<name>/.cargo/.rusty_v8/https___github_com_nimbus_rusty_v8_releases_download_v150_4_0_nimbus_1_librusty_v8_release_aarch64_apple_darwin_a_gz_sha256 \
+  https://github.com/nimbus/rusty_v8/releases/download/v150.4.0-nimbus.1/librusty_v8_release_aarch64-apple-darwin.a.gz.sha256
 ```
 
 ## For maintainers

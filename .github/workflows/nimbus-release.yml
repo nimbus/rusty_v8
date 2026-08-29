@@ -13,7 +13,7 @@ permissions:
 jobs:
   release_matrix:
     name: derive release matrix
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.manifest.outputs.matrix }}
     steps:
@@ -138,7 +138,8 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-21 main" | sudo tee /etc/apt/sources.list.d/llvm-toolchain-jammy-21.list
+          . /etc/os-release
+          echo "deb http://apt.llvm.org/$VERSION_CODENAME/ llvm-toolchain-$VERSION_CODENAME-21 main" | sudo tee /etc/apt/sources.list.d/llvm-toolchain-21.list
           curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/llvm-snapshot.gpg >/dev/null
           sudo apt-get update
           sudo apt-get install -y clang-21 clang-format-21 libclang-21-dev lld-21
@@ -163,6 +164,10 @@ jobs:
       - name: Build and test default release
         if: ${{ ! matrix.build_only }}
         run: cargo nextest run --all-targets --locked --release --target ${{ matrix.target }}
+
+      - name: Test documentation examples
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: cargo test --doc --locked --release --target ${{ matrix.target }}
 
       - name: Build default release (build-only)
         if: matrix.build_only
@@ -223,7 +228,7 @@ jobs:
     name: publish release assets
     needs: build
     if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       actions: read
       contents: write

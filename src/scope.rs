@@ -13,9 +13,10 @@
 //!
 //! # Example
 //!
-//! ```rust
-//! use v8::{HandleScope, Local, Object, Isolate, Context, ContextScope, Object};
+//! ```no_run
+//! use v8::{Context, ContextScope, HandleScope, Isolate, Object};
 //! v8::V8::initialize();
+//! let mut isolate = Isolate::new(Default::default());
 //!
 //! let scope = HandleScope::new(&mut isolate);
 //! let scope = std::pin::pin!(scope);
@@ -36,13 +37,15 @@
 //! 3. Initialize the scope. This is where the scope is actually initialized, and our `Pin` ensures that the scope cannot be moved.
 //!
 //! This is a bit verbose, so you can collapse it into two lines,
-//! ```rust
-//! let scope = std::pin::pin!(HandleScope::new(&mut isolate));
+//! ```no_run
+//! # let mut isolate = v8::Isolate::new(Default::default());
+//! let scope = std::pin::pin!(v8::HandleScope::new(&mut isolate));
 //! let mut scope = scope.init();
 //! ```
 //!
 //! or use the provided macros:
-//! ```rust
+//! ```no_run
+//! # let mut isolate = v8::Isolate::new(Default::default());
 //! // note that this expands into statements, introducing a new variable `scope` into the current
 //! // block. Using it as an expression (`let scope = v8::scope!(let scope, &mut isolate);`) will not work
 //! v8::scope!(let scope, &mut isolate);
@@ -52,7 +55,7 @@
 //! In a function that takes a scope, you'll typically want to take a `PinScope`, like
 //! ```rust
 //! fn foo<'s, 'i>(scope: &mut v8::PinScope<'s, 'i>) {
-//!   let local = v8::Number::new(scope, 42);
+//!   let local = v8::Number::new(scope, 42.0);
 //! }
 //! ```
 //!
@@ -61,7 +64,7 @@
 //! The lifetimes can sometimes be elided, but if you are taking or returning a `Local`, you'll need to specify at least the first one.
 //! ```
 //! fn foo<'s>(scope: &mut v8::PinScope<'s, '_>, arg: v8::Local<'s, v8::Number>) -> v8::Local<'s, v8::Number> {
-//!   v8::Number::new(scope, arg.value() + 42.0);
+//!   v8::Number::new(scope, arg.value() + 42.0)
 //! }
 //! ```
 //!
@@ -1807,8 +1810,9 @@ pub(crate) use callback_scope;
 
 /// Creates a pinned `HandleScope` and binds `&mut PinScope` to `$scope`.
 ///
-/// ```rust
-/// v8::scope!(let scope, isolate);
+/// ```no_run
+/// # let mut isolate = v8::Isolate::new(Default::default());
+/// v8::scope!(let scope, &mut isolate);
 /// ```
 #[allow(unused_macros)]
 #[macro_export]

@@ -15,3 +15,26 @@ note: required by a bound in `assert_send`
   |
 9 | fn assert_send<T: Send>() {}
   |                   ^^^^ required by this bound in `assert_send`
+
+error[E0277]: `NonNull<v8::isolate::IsolateLiveness>` cannot be sent between threads safely
+ --> tests/compile_fail/global_not_send.rs:6:17
+  |
+6 |   assert_send::<v8::Global<v8::Value>>();
+  |                 ^^^^^^^^^^^^^^^^^^^^^ `NonNull<v8::isolate::IsolateLiveness>` cannot be sent between threads safely
+  |
+  = help: within `v8::Global<Value>`, the trait `Send` is not implemented for `NonNull<v8::isolate::IsolateLiveness>`
+note: required because it appears within the type `v8::handle::GlobalHost`
+ --> src/handle.rs
+  |
+  | enum GlobalHost {
+  |      ^^^^^^^^^^
+note: required because it appears within the type `v8::Global<Value>`
+ --> src/handle.rs
+  |
+  | pub struct Global<T> {
+  |            ^^^^^^
+note: required by a bound in `assert_send`
+ --> tests/compile_fail/global_not_send.rs:9:19
+  |
+9 | fn assert_send<T: Send>() {}
+  |                   ^^^^ required by this bound in `assert_send`

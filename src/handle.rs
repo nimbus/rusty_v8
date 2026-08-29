@@ -12,6 +12,7 @@ use std::ptr::NonNull;
 use crate::Data;
 use crate::Isolate;
 use crate::IsolateHandle;
+use crate::isolate::IsolateLiveness;
 use crate::isolate::RealIsolate;
 use crate::scope::GetIsolate;
 use crate::scope::PinScope;
@@ -284,7 +285,13 @@ impl<'s, T> Local<'s, T> {
 #[derive(Debug)]
 pub struct Global<T> {
   data: NonNull<T>,
-  isolate_handle: IsolateHandle,
+  host: GlobalHost,
+}
+
+#[derive(Debug)]
+enum GlobalHost {
+  SingleThreaded(NonNull<IsolateLiveness>),
+  LockerRequired(IsolateHandle),
 }
 
 impl<T> Global<T> {
@@ -304,11 +311,12 @@ impl<T> Global<T> {
     unsafe {
       let data = v8__Global__New((*isolate).as_real_ptr(), data) as *const T;
       let data = NonNull::new_unchecked(data as *mut _);
-      let isolate_handle = (*isolate).thread_safe_handle();
-      Self {
-        data,
-        isolate_handle,
-      }
+      let host = if (*isolate).persistent_handles_require_locker() {
+        GlobalHost::LockerRequired((*isolate).thread_safe_handle())
+      } else {
+        GlobalHost::SingleThreaded((*isolate).global_liveness())
+      };
+      Self { data, host }
     }
   }
 
@@ -322,7 +330,7 @@ impl<T> Global<T> {
   pub fn into_raw(self) -> NonNull<T> {
     let data = self.data;
     let mut this = ManuallyDrop::new(self);
-    unsafe { std::ptr::drop_in_place(&mut this.isolate_handle) };
+    unsafe { std::ptr::drop_in_place(&mut this.host) };
     data
   }
 
@@ -330,11 +338,12 @@ impl<T> Global<T> {
   /// original `Global`.
   #[inline(always)]
   pub unsafe fn from_raw(isolate: &mut Isolate, data: NonNull<T>) -> Self {
-    let isolate_handle = isolate.thread_safe_handle();
-    Self {
-      data,
-      isolate_handle,
-    }
+    let host = if isolate.persistent_handles_require_locker() {
+      GlobalHost::LockerRequired(isolate.thread_safe_handle())
+    } else {
+      GlobalHost::SingleThreaded(isolate.global_liveness())
+    };
+    Self { data, host }
   }
 
   #[inline(always)]
@@ -344,15 +353,36 @@ impl<T> Global<T> {
 
   #[inline(always)]
   fn get_handle_host(&self) -> HandleHost {
-    (&self.isolate_handle).into()
+    NonNull::new(self.get_isolate_ptr())
+      .map_or(HandleHost::DisposedIsolate, HandleHost::Isolate)
+  }
+
+  fn get_isolate_ptr(&self) -> *mut RealIsolate {
+    match &self.host {
+      GlobalHost::SingleThreaded(liveness) => unsafe {
+        liveness.as_ref().get_isolate_ptr()
+      },
+      GlobalHost::LockerRequired(handle) => unsafe { handle.get_isolate_ptr() },
+    }
+  }
+
+  fn with_persistent_handle_scope<R>(
+    &self,
+    f: impl FnOnce(NonNull<RealIsolate>) -> R,
+  ) -> Option<R> {
+    match &self.host {
+      GlobalHost::SingleThreaded(liveness) => {
+        NonNull::new(unsafe { liveness.as_ref().get_isolate_ptr() }).map(f)
+      }
+      GlobalHost::LockerRequired(handle) => handle.with_locked_isolate_ptr(f),
+    }
   }
 }
 
 impl<T> Clone for Global<T> {
   fn clone(&self) -> Self {
     self
-      .isolate_handle
-      .with_locked_isolate_ptr(|isolate_ptr| {
+      .with_persistent_handle_scope(|isolate_ptr| {
         let mut isolate = unsafe { Isolate::from_non_null(isolate_ptr) };
         unsafe { Self::new_raw(isolate.as_mut(), self.data) }
       })
@@ -364,7 +394,7 @@ impl<T> Clone for Global<T> {
 
 impl<T> Drop for Global<T> {
   fn drop(&mut self) {
-    self.isolate_handle.with_locked_isolate_ptr(|_| unsafe {
+    self.with_persistent_handle_scope(|_| unsafe {
       // Destroy the storage cell that contains the contents of this Global.
       v8__Global__Reset(self.data.cast().as_ptr());
     });
@@ -514,7 +544,7 @@ impl<T: Hash> Hash for Local<'_, T> {
 impl<T: Hash> Hash for Global<T> {
   fn hash<H: Hasher>(&self, state: &mut H) {
     unsafe {
-      if self.isolate_handle.get_isolate_ptr().is_null() {
+      if self.get_isolate_ptr().is_null() {
         panic!("can't hash Global after its host Isolate has been disposed");
       }
       self.data.as_ref().hash(state);

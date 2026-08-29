@@ -859,7 +859,9 @@ enum ChecksumPolicy {
 }
 
 fn download_file(url: &str, filename: &Path, checksum: ChecksumPolicy) {
-  if cached_download_matches(url, filename, checksum) {
+  if checksum == ChecksumPolicy::Required
+    && cached_download_matches(url, filename, checksum)
+  {
     return;
   }
 
@@ -1652,6 +1654,14 @@ fn env_bool(key: &str) -> bool {
 mod test {
   use super::*;
 
+  fn panic_message(payload: &(dyn std::any::Any + Send)) -> &str {
+    payload
+      .downcast_ref::<String>()
+      .map(String::as_str)
+      .or_else(|| payload.downcast_ref::<&str>().copied())
+      .unwrap()
+  }
+
   const MOCK_GRAPH: &str = r#"
 digraph ninja {
 rankdir="LR"
@@ -1842,11 +1852,7 @@ edge [fontsize=10]
       );
     })
     .unwrap_err();
-    let missing_sidecar = missing_sidecar
-      .downcast_ref::<String>()
-      .map(String::as_str)
-      .or_else(|| missing_sidecar.downcast_ref::<&str>().copied())
-      .unwrap();
+    let missing_sidecar = panic_message(missing_sidecar.as_ref());
     assert!(missing_sidecar.contains("missing the required checksum sidecar"));
     assert!(missing_sidecar.contains("nimbus-v8-asset.a.sha256"));
 
@@ -1868,6 +1874,27 @@ edge [fontsize=10]
     download_file(asset.to_str().unwrap(), &output, ChecksumPolicy::Required);
     assert_eq!(fs::read(&output).unwrap(), b"abc");
 
+    let mismatch_asset = root.join("mismatch.bin");
+    let mismatch_output = root.join("mismatch-output.bin");
+    fs::write(&mismatch_asset, b"substituted").unwrap();
+    fs::write(
+      root.join("mismatch.bin.sha256"),
+      format!("{DIGEST}  mismatch.bin\n"),
+    )
+    .unwrap();
+    let mismatch = std::panic::catch_unwind(|| {
+      download_file(
+        mismatch_asset.to_str().unwrap(),
+        &mismatch_output,
+        ChecksumPolicy::Required,
+      );
+    })
+    .unwrap_err();
+    assert!(
+      panic_message(mismatch.as_ref())
+        .contains("SHA-256 mismatch for V8 prebuilt asset")
+    );
+
     // A modified output must not be accepted as a cache hit.
     fs::write(&output, b"tampered").unwrap();
     download_file(asset.to_str().unwrap(), &output, ChecksumPolicy::Required);
@@ -1882,6 +1909,16 @@ edge [fontsize=10]
       ChecksumPolicy::TrustedCustomArchive,
     );
     assert_eq!(fs::read(&trusted_output).unwrap(), b"caller-trusted");
+    fs::write(&trusted_asset, b"caller-trusted-updated").unwrap();
+    download_file(
+      trusted_asset.to_str().unwrap(),
+      &trusted_output,
+      ChecksumPolicy::TrustedCustomArchive,
+    );
+    assert_eq!(
+      fs::read(&trusted_output).unwrap(),
+      b"caller-trusted-updated"
+    );
 
     fs::remove_dir_all(root).unwrap();
   }

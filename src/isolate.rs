@@ -76,6 +76,7 @@ use std::sync::Arc;
 use std::sync::Condvar;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicPtr;
 
 /// Policy for running microtasks:
 ///   - explicit: microtasks are invoked with the
@@ -1002,6 +1003,16 @@ impl Isolate {
     self.get_annex().isolate_handle.clone()
   }
 
+  #[inline(always)]
+  pub(crate) fn global_liveness(&self) -> NonNull<IsolateLiveness> {
+    self.get_annex().global_liveness
+  }
+
+  #[inline(always)]
+  pub(crate) fn persistent_handles_require_locker(&self) -> bool {
+    self.get_annex().isolate_handle.locker_required()
+  }
+
   /// See [`IsolateHandle::terminate_execution`]
   #[inline(always)]
   pub fn terminate_execution(&self) -> bool {
@@ -1080,6 +1091,7 @@ impl Isolate {
       // Stop new isolate users. The returned handle lets the caller wait for
       // users that pinned the pointer before this transition. The wait must
       // happen after any outer V8 Locker is released.
+      (*annex_ptr).global_liveness().dispose();
       (*annex_ptr).isolate_handle.dispose();
     }
     let isolate_handle = unsafe { (*annex_ptr).isolate_handle.clone() };
@@ -2100,10 +2112,15 @@ pub(crate) struct IsolateAnnex {
   active_weak_data: HashSet<std::ptr::NonNull<WeakDataErased>>,
   maybe_snapshot_creator: Option<SnapshotCreator>,
   isolate_handle: IsolateHandle,
+  global_liveness: NonNull<IsolateLiveness>,
 }
 
 impl IsolateAnnex {
   fn new(isolate: &Isolate, create_param_allocations: Box<dyn Any>) -> Self {
+    // A Global can outlive its isolate. Keep this small atomic cell valid so
+    // common single-threaded Global access does not retain an Arc or take the
+    // isolate-access mutex.
+    let global_liveness = Box::leak(Box::new(IsolateLiveness::new(isolate)));
     Self {
       create_param_allocations: Some(create_param_allocations),
       slots: HashMap::default(),
@@ -2111,7 +2128,13 @@ impl IsolateAnnex {
       active_weak_data: HashSet::new(),
       maybe_snapshot_creator: None,
       isolate_handle: IsolateHandle::new(isolate),
+      global_liveness: NonNull::from(global_liveness),
     }
+  }
+
+  #[inline(always)]
+  fn global_liveness(&self) -> &IsolateLiveness {
+    unsafe { self.global_liveness.as_ref() }
   }
 
   fn require_locker(&self) {
@@ -2148,6 +2171,28 @@ impl IsolateAnnex {
       .slots
       .remove(&TypeId::of::<T>())
       .map(|slot| unsafe { slot.into_inner::<T>() })
+  }
+}
+
+pub(crate) struct IsolateLiveness {
+  isolate: AtomicPtr<RealIsolate>,
+}
+
+impl IsolateLiveness {
+  fn new(isolate: &Isolate) -> Self {
+    Self {
+      isolate: AtomicPtr::new(isolate.as_real_ptr()),
+    }
+  }
+
+  fn dispose(&self) {
+    self
+      .isolate
+      .store(null_mut(), std::sync::atomic::Ordering::Release);
+  }
+
+  pub(crate) fn get_isolate_ptr(&self) -> *mut RealIsolate {
+    self.isolate.load(std::sync::atomic::Ordering::Acquire)
   }
 }
 
@@ -2194,6 +2239,7 @@ pub(crate) struct IsolateHandleInner {
   state: Mutex<IsolateHandleState>,
   quiesced: Condvar,
   locker_required: AtomicBool,
+  visible_isolate: AtomicPtr<RealIsolate>,
 }
 
 struct IsolateHandleState {
@@ -2279,6 +2325,7 @@ impl IsolateHandle {
       }),
       quiesced: Condvar::new(),
       locker_required: AtomicBool::new(false),
+      visible_isolate: AtomicPtr::new(isolate.as_real_ptr()),
     });
     Self(inner)
   }
@@ -2288,6 +2335,13 @@ impl IsolateHandle {
       .0
       .locker_required
       .store(true, std::sync::atomic::Ordering::Release);
+  }
+
+  fn locker_required(&self) -> bool {
+    self
+      .0
+      .locker_required
+      .load(std::sync::atomic::Ordering::Acquire)
   }
 
   pub(crate) fn with_locked_isolate_ptr<R>(
@@ -2311,6 +2365,10 @@ impl IsolateHandle {
   /// Set the inner isolate pointer to null.
   fn dispose(&self) {
     self.0.state.lock().unwrap().isolate = null_mut();
+    self
+      .0
+      .visible_isolate
+      .store(null_mut(), std::sync::atomic::Ordering::Release);
   }
 
   fn wait_for_quiescence(&self) {
@@ -2337,7 +2395,10 @@ impl IsolateHandle {
   /// the V8 isolate.
   // TODO: have this return an `Option<NonNull<RealIsolate>>`
   pub(crate) unsafe fn get_isolate_ptr(&self) -> *mut RealIsolate {
-    self.0.state.lock().unwrap().isolate
+    self
+      .0
+      .visible_isolate
+      .load(std::sync::atomic::Ordering::Acquire)
   }
 
   /// Forcefully terminate the current thread of JavaScript execution

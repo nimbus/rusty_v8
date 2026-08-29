@@ -94,25 +94,25 @@ jobs:
             simdutf: true
             cargo: cargo
 
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-24.04' }}
             target: x86_64-unknown-linux-gnu
             variant: debug
             v8_enable_pointer_compression: false
             cargo: cargo
 
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-24.04' }}
             target: x86_64-unknown-linux-gnu
             variant: release
             v8_enable_pointer_compression: false
             cargo: cargo
 
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-24.04' }}
             target: x86_64-unknown-linux-gnu
             variant: debug
             v8_enable_pointer_compression: true
             cargo: cargo
 
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-24.04' }}
             target: x86_64-unknown-linux-gnu
             variant: release
             v8_enable_pointer_compression: true
@@ -123,13 +123,13 @@ jobs:
           # Release only for now, like the iOS targets: V8's debug-only
           # execinfo backtrace path (external-reference-table.cc) assumes glibc
           # and doesn't compile against musl.
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-24.04' }}
             target: x86_64-unknown-linux-musl
             variant: release
             v8_enable_pointer_compression: false
             cargo: cargo
 
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-24.04' }}
             target: x86_64-unknown-linux-musl
             variant: release
             v8_enable_pointer_compression: false
@@ -138,13 +138,13 @@ jobs:
 
           # aarch64 musl: cross-compiled on the x64 glibc runner (host + snapshot
           # toolchains stay glibc; only the arm64 target objects are musl).
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-24.04' }}
             target: aarch64-unknown-linux-musl
             variant: release
             v8_enable_pointer_compression: false
             cargo: cargo
 
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-24.04' }}
             target: aarch64-unknown-linux-musl
             variant: release
             v8_enable_pointer_compression: false
@@ -157,25 +157,25 @@ jobs:
             v8_enable_pointer_compression: false
             cargo: cargo
 
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-24.04' }}
             target: aarch64-unknown-linux-gnu
             variant: debug
             v8_enable_pointer_compression: false
             cargo: cargo
 
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-24.04' }}
             target: aarch64-unknown-linux-gnu
             variant: release
             v8_enable_pointer_compression: false
             cargo: cargo
 
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-24.04' }}
             target: riscv64gc-unknown-linux-gnu
             variant: debug
             v8_enable_pointer_compression: false
             cargo: cargo
 
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-24.04' }}
             target: riscv64gc-unknown-linux-gnu
             variant: release
             v8_enable_pointer_compression: false
@@ -210,42 +210,42 @@ jobs:
             simdutf: true
             cargo: cargo
 
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-24.04' }}
             target: x86_64-unknown-linux-gnu
             variant: debug
             v8_enable_pointer_compression: false
             simdutf: true
             cargo: cargo
 
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-24.04' }}
             target: x86_64-unknown-linux-gnu
             variant: release
             v8_enable_pointer_compression: false
             simdutf: true
             cargo: cargo
 
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-24.04' }}
             target: aarch64-unknown-linux-gnu
             variant: debug
             v8_enable_pointer_compression: false
             simdutf: true
             cargo: cargo
 
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-24.04' }}
             target: aarch64-unknown-linux-gnu
             variant: release
             v8_enable_pointer_compression: false
             simdutf: true
             cargo: cargo
 
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-24.04' }}
             target: riscv64gc-unknown-linux-gnu
             variant: debug
             v8_enable_pointer_compression: false
             simdutf: true
             cargo: cargo
 
-          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+          - os: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-24.04' }}
             target: riscv64gc-unknown-linux-gnu
             variant: release
             v8_enable_pointer_compression: false
@@ -432,7 +432,8 @@ jobs:
       - name: Install Clang
         if: startsWith(matrix.config.os, 'ubuntu')
         run: |
-          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-21 main" | sudo dd of=/etc/apt/sources.list.d/llvm-toolchain-jammy-21.list
+          . /etc/os-release
+          echo "deb http://apt.llvm.org/$VERSION_CODENAME/ llvm-toolchain-$VERSION_CODENAME-21 main" | sudo dd of=/etc/apt/sources.list.d/llvm-toolchain-21.list
           curl https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor | sudo dd of=/etc/apt/trusted.gpg.d/llvm-snapshot.gpg
           sudo apt-get update
           sudo apt-get -qq remove 'clang-*'
@@ -477,6 +478,10 @@ jobs:
           SCCACHE_IDLE_TIMEOUT: 0
         if: (matrix.config.variant == 'debug' || matrix.config.variant == 'release') && !contains(matrix.config.target, 'ios') && !contains(matrix.config.target, '-linux-musl')
         run: ${{ matrix.config.cargo }} nextest run -v --cargo-verbose --cargo-verbose --all-targets --locked --target ${{ matrix.config.target }} ${{ env.CARGO_VARIANT_FLAG }} ${{ env.CARGO_FEATURE_FLAGS }}
+
+      - name: Test documentation examples
+        if: matrix.config.target == 'x86_64-unknown-linux-gnu' && matrix.config.variant == 'debug' && matrix.config.v8_enable_pointer_compression == false && matrix.config.simdutf != true
+        run: cargo test --doc --locked --target ${{ matrix.config.target }}
 
       - name: Clippy
         if: ${{ !contains(matrix.config.target, 'ios') && !contains(matrix.config.target, '-linux-musl') }}
@@ -816,7 +821,7 @@ jobs:
 
   publish:
     needs: [build, build-windows-arm64, build-windows-arm64-simdutf]
-    runs-on: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-22.04' }}
+    runs-on: ${{ github.repository == 'denoland/rusty_v8' && 'ubuntu-22.04-xl' || 'ubuntu-24.04' }}
     if: github.repository == 'denoland/rusty_v8' && startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Configure git
