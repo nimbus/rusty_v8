@@ -55,15 +55,6 @@ def verify_release_tree(
             failures.append(f"checksum mismatch: {sidecar.name}")
 
     expected_names = set(assets) | {f"{name}.sha256" for name in assets}
-    paths_by_name = files_by_name(directory)
-    for name, paths in sorted(paths_by_name.items()):
-        if len(paths) > 1 and not any(
-            failure.startswith(f"duplicate release file: {name}:")
-            for failure in failures
-        ):
-            rendered = ", ".join(str(path.relative_to(directory)) for path in paths)
-            failures.append(f"duplicate release file: {name}: {rendered}")
-
     actual_names = set(paths_by_name)
     failures.extend(
         f"unexpected release file: {name}"
