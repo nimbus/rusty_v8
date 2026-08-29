@@ -2,7 +2,7 @@
 /// are used in the scope module, as well as definitions for the types they operate on.
 use crate::{
   Context, Data, Function, Local, Message, OnFailure, Primitive, Value,
-  isolate::RealIsolate,
+  isolate::RealIsolate, support::Opaque,
 };
 use std::num::NonZeroUsize;
 use std::{
@@ -221,69 +221,31 @@ impl Drop for AllowJavascriptExecutionScope {
 
 /// Raw V8 Locker binding.
 ///
-/// This is a low-level wrapper around `v8::Locker`. It must be used with
-/// proper two-phase initialization: first call `uninit()`, then `init()`.
-///
-/// # Memory Layout
-///
-/// This struct is `#[repr(C)]` and sized to match `v8::Locker` exactly
-/// (verified by the `locker_size_matches_v8` test). The size is 2 * sizeof(usize)
-/// which equals 16 bytes on 64-bit platforms.
+/// The C++ object is heap-allocated so its address stays stable while this Rust
+/// owner moves.
 ///
 /// # Safety Invariants
 ///
-/// 1. **Initialization**: After calling `uninit()`, you MUST call `init()` before
-///    the `Locker` is dropped. Dropping an uninitialized `Locker` is undefined
-///    behavior because `Drop` will call the C++ destructor on garbage data.
+/// 1. **Isolate Pointer**: The isolate pointer passed to `new()` must be valid.
 ///
-/// 2. **Isolate Pointer**: The isolate pointer passed to `init()` must be valid.
-///
-/// 3. **Single Initialization**: `init()` must be called exactly once. Calling it
-///    multiple times is undefined behavior.
-///
-/// 4. **Thread Affinity**: Once initialized, the `Locker` must be used and dropped
+/// 2. **Thread Affinity**: Once initialized, the `Locker` must be used and dropped
 ///    on the same thread where it was created.
-#[repr(C)]
 #[derive(Debug)]
-pub(crate) struct Locker([MaybeUninit<usize>; 2]);
-
-#[test]
-fn locker_size_matches_v8() {
-  assert_eq!(
-    std::mem::size_of::<Locker>(),
-    unsafe { v8__Locker__SIZE() },
-    "Locker size mismatch"
-  );
-}
+pub(crate) struct Locker(NonNull<Opaque>);
 
 impl Locker {
-  /// Creates an uninitialized `Locker`.
+  /// Allocates and acquires a C++ `v8::Locker` for the isolate.
   ///
   /// # Safety
   ///
-  /// The returned `Locker` is in an invalid state. You MUST call `init()` before:
-  /// - Using the `Locker` in any way
-  /// - Dropping the `Locker` (including via panic unwinding)
-  ///
-  /// Failure to initialize before drop will cause undefined behavior because
-  /// `Drop::drop` will call the C++ destructor on uninitialized memory.
-  #[inline]
-  pub unsafe fn uninit() -> Self {
-    Self(unsafe { MaybeUninit::uninit().assume_init() })
-  }
-
-  /// Initializes the `Locker` for the given isolate.
-  ///
-  /// # Safety
-  ///
-  /// - This must be called exactly once after `uninit()`
   /// - The isolate pointer must be valid
   /// - The isolate must not be locked by another `Locker`
-  /// - After this call, the `Locker` owns the V8 lock until dropped
   #[inline]
-  pub unsafe fn init(&mut self, isolate: NonNull<RealIsolate>) {
-    let buf = NonNull::from(self).cast();
-    unsafe { v8__Locker__CONSTRUCT(buf.as_ptr(), isolate.as_ptr()) };
+  pub unsafe fn new(isolate: NonNull<RealIsolate>) -> Self {
+    Self(
+      NonNull::new(unsafe { v8__Locker__NEW(isolate.as_ptr()) })
+        .expect("v8::Locker allocation returned null"),
+    )
   }
 }
 
@@ -292,11 +254,10 @@ impl Drop for Locker {
   ///
   /// # Safety (internal)
   ///
-  /// This assumes the `Locker` was properly initialized via `init()`.
-  /// Dropping an uninitialized `Locker` is undefined behavior.
+  /// This assumes the Locker is dropped on the thread that created it.
   #[inline(always)]
   fn drop(&mut self) {
-    unsafe { v8__Locker__DESTRUCT(self) };
+    unsafe { v8__Locker__DELETE(self.0.as_ptr()) };
   }
 }
 
@@ -393,11 +354,6 @@ unsafe extern "C" {
     this: *mut AllowJavascriptExecutionScope,
   );
 
-  pub(super) fn v8__Locker__CONSTRUCT(
-    buf: *mut MaybeUninit<Locker>,
-    isolate: *mut RealIsolate,
-  );
-  pub(super) fn v8__Locker__DESTRUCT(this: *mut Locker);
-  #[cfg(test)]
-  fn v8__Locker__SIZE() -> usize;
+  pub(super) fn v8__Locker__NEW(isolate: *mut RealIsolate) -> *mut Opaque;
+  pub(super) fn v8__Locker__DELETE(this: *mut Opaque);
 }

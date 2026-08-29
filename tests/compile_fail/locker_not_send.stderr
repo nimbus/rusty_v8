@@ -36,6 +36,49 @@ note: required by a bound in `Scope::<'scope, 'env>::spawn`
    |         F: FnOnce() -> T + Send + 'scope,
    |                            ^^^^ required by this bound in `Scope::<'scope, 'env>::spawn`
 
+error[E0277]: `NonNull<[u8; 0]>` cannot be sent between threads safely
+  --> tests/compile_fail/locker_not_send.rs:12:17
+   |
+12 |       scope.spawn(move || {
+   |             ----- ^------
+   |             |     |
+   |  ___________|_____within this `{closure@$DIR/tests/compile_fail/locker_not_send.rs:12:17: 12:24}`
+   | |           |
+   | |           required by a bound introduced by this call
+13 | |       drop(locker);
+14 | |     });
+   | |_____^ `NonNull<[u8; 0]>` cannot be sent between threads safely
+   |
+   = help: within `{closure@$DIR/tests/compile_fail/locker_not_send.rs:12:17: 12:24}`, the trait `Send` is not implemented for `NonNull<[u8; 0]>`
+note: required because it appears within the type `v8::scope::raw::Locker`
+  --> src/scope/raw.rs
+   |
+   | pub(crate) struct Locker(NonNull<Opaque>);
+   |                   ^^^^^^
+note: required because it appears within the type `ManuallyDrop<v8::scope::raw::Locker>`
+  --> $RUST/core/src/mem/manually_drop.rs
+   |
+   | pub struct ManuallyDrop<T: ?Sized> {
+   |            ^^^^^^^^^^^^
+note: required because it appears within the type `Locker<'_>`
+  --> src/isolate.rs
+   |
+   | pub struct Locker<'a> {
+   |            ^^^^^^
+note: required because it's used within this closure
+  --> tests/compile_fail/locker_not_send.rs:12:17
+   |
+12 |     scope.spawn(move || {
+   |                 ^^^^^^^
+note: required by a bound in `Scope::<'scope, 'env>::spawn`
+  --> $RUST/std/src/thread/scoped.rs
+   |
+   |     pub fn spawn<F, T>(&'scope self, f: F) -> ScopedJoinHandle<'scope, T>
+   |            ----- required by a bound in this associated function
+   |     where
+   |         F: FnOnce() -> T + Send + 'scope,
+   |                            ^^^^ required by this bound in `Scope::<'scope, 'env>::spawn`
+
 error[E0277]: `NonNull<RealIsolate>` cannot be sent between threads safely
   --> tests/compile_fail/locker_not_send.rs:12:17
    |

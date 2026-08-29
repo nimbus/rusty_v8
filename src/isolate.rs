@@ -2179,8 +2179,7 @@ impl PersistentHandleScope {
         locker: None,
       };
     }
-    let mut locker = unsafe { crate::scope::raw::Locker::uninit() };
-    unsafe { locker.init(isolate) };
+    let locker = unsafe { crate::scope::raw::Locker::new(isolate) };
     unsafe { v8__Isolate__Enter(isolate.as_ptr()) };
     Self {
       isolate: Some(isolate),
@@ -3052,8 +3051,7 @@ impl<'a> Locker<'a> {
     let isolate_ptr = isolate.cxx_isolate;
 
     // Acquire the lock first (must hold lock before touching entry_stack_)
-    let mut raw = unsafe { crate::scope::raw::Locker::uninit() };
-    unsafe { raw.init(isolate_ptr) };
+    let raw = unsafe { crate::scope::raw::Locker::new(isolate_ptr) };
 
     // Now enter the isolate (safe because we hold the lock)
     unsafe {

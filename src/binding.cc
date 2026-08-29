@@ -55,7 +55,6 @@ static_assert(sizeof(v8::EscapableHandleScope) ==
 static_assert(sizeof(v8::PromiseRejectMessage) == sizeof(size_t) * 3,
               "PromiseRejectMessage size mismatch");
 
-static_assert(sizeof(v8::Locker) == sizeof(size_t) * 2, "Locker size mismatch");
 
 static_assert(sizeof(v8::ScriptCompiler::CompilationDetails) ==
                   sizeof(int64_t) * 3,
@@ -173,13 +172,11 @@ void v8__Isolate__Enter(v8::Isolate* isolate) { isolate->Enter(); }
 
 void v8__Isolate__Exit(v8::Isolate* isolate) { isolate->Exit(); }
 
-void v8__Locker__CONSTRUCT(uninit_t<v8::Locker>* buf, v8::Isolate* isolate) {
-  construct_in_place<v8::Locker>(buf, isolate);
+v8::Locker* v8__Locker__NEW(v8::Isolate* isolate) {
+  return new v8::Locker(isolate);
 }
 
-void v8__Locker__DESTRUCT(v8::Locker* self) { self->~Locker(); }
-
-size_t v8__Locker__SIZE() { return sizeof(v8::Locker); }
+void v8__Locker__DELETE(v8::Locker* self) { delete self; }
 
 v8::Isolate* v8__Isolate__GetCurrent() { return v8::Isolate::GetCurrent(); }
 

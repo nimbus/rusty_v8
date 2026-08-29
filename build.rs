@@ -1532,6 +1532,16 @@ edge [fontsize=10]
 
   #[test]
   fn test_nimbus_prebuilt_selectors() {
+    assert_eq!(prebuilt_features_suffix_from_flags(false, false, false), "");
+    assert_eq!(
+      prebuilt_features_suffix_from_flags(true, false, true),
+      "_ptrcomp_simdutf"
+    );
+    assert_eq!(
+      prebuilt_features_suffix_from_flags(true, true, true),
+      "_ptrcomp_sandbox_simdutf"
+    );
+
     for target in ["x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl"] {
       assert_eq!(
         prebuilt_archive_name(target, "release", "").unwrap(),
@@ -1574,7 +1584,7 @@ edge [fontsize=10]
       prebuilt_archive_name(
         "aarch64-apple-darwin",
         "release",
-        "_ptrcomp_simdutf"
+        &prebuilt_features_suffix_from_flags(true, false, true)
       )
       .is_ok()
     );

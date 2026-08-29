@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import gzip
 import shutil
 import subprocess
 import sys
@@ -30,10 +31,10 @@ from verify_nimbus_release_assets import (  # noqa: E402
 
 class ManifestTests(unittest.TestCase):
     def test_exact_matrix_and_asset_count(self) -> None:
-        self.assertEqual(len(TARGET_CONFIGS), 6)
-        self.assertEqual(len(expected_assets()), 30)
-        self.assertEqual(len(set(expected_assets())), 30)
-        self.assertEqual(len(github_matrix()["include"]), 6)
+        self.assertEqual(len(TARGET_CONFIGS), 7)
+        self.assertEqual(len(expected_assets()), 36)
+        self.assertEqual(len(set(expected_assets())), 36)
+        self.assertEqual(len(github_matrix()["include"]), 7)
 
     def test_musl_names_and_no_pointer_compression(self) -> None:
         for target in (
@@ -170,6 +171,11 @@ class PackagerTests(unittest.TestCase):
             self.assertEqual(
                 set(files_by_name(output)), set(asset_names(target, "simdutf"))
             )
+            archive_name, binding_name = asset_names(target, "simdutf")
+            self.assertEqual(
+                gzip.decompress((output / archive_name).read_bytes()), b"library"
+            )
+            self.assertEqual((output / binding_name).read_bytes(), b"binding")
 
     def test_musl_pointer_compression_is_rejected(self) -> None:
         result = subprocess.run(

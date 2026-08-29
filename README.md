@@ -122,6 +122,11 @@ Release prebuilts also include normal and `simdutf` archives plus bindings for
 cross-compiled, build-only configurations; pointer-compressed and sandboxed
 musl prebuilts are not published.
 
+Nimbus publishes release prebuilts for Apple silicon and Intel macOS,
+x86-64 and AArch64 GNU/Linux, x86-64 Windows, and x86-64 and AArch64 musl
+Linux. The build script rejects target, profile, and feature combinations that
+the release manifest does not publish.
+
 ## The `RUSTY_V8_ARCHIVE` environment variable
 
 Tell the build script to use a specific v8 library. This can be an URL or a
