@@ -285,13 +285,6 @@ impl Locker {
     let buf = NonNull::from(self).cast();
     unsafe { v8__Locker__CONSTRUCT(buf.as_ptr(), isolate.as_ptr()) };
   }
-
-  /// Returns `true` if the given isolate is currently locked by any `Locker`.
-  ///
-  /// This is safe to call from any thread.
-  pub fn is_locked(isolate: NonNull<RealIsolate>) -> bool {
-    unsafe { v8__Locker__IsLocked(isolate.as_ptr()) }
-  }
 }
 
 impl Drop for Locker {
@@ -405,8 +398,6 @@ unsafe extern "C" {
     isolate: *mut RealIsolate,
   );
   pub(super) fn v8__Locker__DESTRUCT(this: *mut Locker);
-  pub(super) fn v8__Locker__IsLocked(isolate: *mut RealIsolate) -> bool;
-
   #[cfg(test)]
   fn v8__Locker__SIZE() -> usize;
 }

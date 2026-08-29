@@ -75,6 +75,7 @@ use std::ptr::null_mut;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicPtr;
 
 /// Policy for running microtasks:
@@ -2122,6 +2123,11 @@ impl IsolateAnnex {
     unsafe { self.global_liveness.as_ref() }
   }
 
+  fn require_locker(&self) {
+    self.global_liveness().require_locker();
+    self.isolate_handle.require_locker();
+  }
+
   #[inline(always)]
   pub(crate) fn get_slot<T: 'static>(&self) -> Option<&T> {
     self
@@ -2157,6 +2163,39 @@ impl IsolateAnnex {
 
 pub(crate) struct IsolateLiveness {
   isolate: AtomicPtr<RealIsolate>,
+  locker_required: AtomicBool,
+}
+
+pub(crate) struct PersistentHandleScope {
+  isolate: Option<NonNull<RealIsolate>>,
+  locker: Option<crate::scope::raw::Locker>,
+}
+
+impl PersistentHandleScope {
+  fn new(isolate: NonNull<RealIsolate>, locker_required: bool) -> Self {
+    if !locker_required {
+      return Self {
+        isolate: None,
+        locker: None,
+      };
+    }
+    let mut locker = unsafe { crate::scope::raw::Locker::uninit() };
+    unsafe { locker.init(isolate) };
+    unsafe { v8__Isolate__Enter(isolate.as_ptr()) };
+    Self {
+      isolate: Some(isolate),
+      locker: Some(locker),
+    }
+  }
+}
+
+impl Drop for PersistentHandleScope {
+  fn drop(&mut self) {
+    if let Some(isolate) = self.isolate.take() {
+      unsafe { v8__Isolate__Exit(isolate.as_ptr()) };
+    }
+    self.locker.take();
+  }
 }
 
 impl IsolateLiveness {
@@ -2164,7 +2203,26 @@ impl IsolateLiveness {
   fn new(isolate: &Isolate) -> Self {
     Self {
       isolate: AtomicPtr::new(isolate.as_real_ptr()),
+      locker_required: AtomicBool::new(false),
     }
+  }
+
+  fn require_locker(&self) {
+    self
+      .locker_required
+      .store(true, std::sync::atomic::Ordering::Relaxed);
+  }
+
+  pub(crate) fn lock_for_persistent_handle(
+    &self,
+    isolate: NonNull<RealIsolate>,
+  ) -> PersistentHandleScope {
+    PersistentHandleScope::new(
+      isolate,
+      self
+        .locker_required
+        .load(std::sync::atomic::Ordering::Relaxed),
+    )
   }
 
   #[inline(always)]
@@ -2198,6 +2256,7 @@ pub(crate) struct IsolateHandleInner {
   // `Mutex::data_ptr()` is stabilized.
   isolate: UnsafeCell<*mut RealIsolate>,
   isolate_mutex: Mutex<()>,
+  locker_required: AtomicBool,
 }
 
 unsafe impl Send for IsolateHandleInner {}
@@ -2232,8 +2291,32 @@ impl IsolateHandle {
     let inner = Arc::new(IsolateHandleInner {
       isolate: UnsafeCell::new(isolate.as_real_ptr()),
       isolate_mutex: Mutex::new(()),
+      locker_required: AtomicBool::new(false),
     });
     Self(inner)
+  }
+
+  fn require_locker(&self) {
+    self
+      .0
+      .locker_required
+      .store(true, std::sync::atomic::Ordering::Relaxed);
+  }
+
+  pub(crate) fn with_locked_isolate_ptr<R>(
+    &self,
+    f: impl FnOnce(NonNull<RealIsolate>) -> R,
+  ) -> Option<R> {
+    let _pointer_lock = self.0.isolate_mutex.lock().unwrap();
+    let isolate = NonNull::new(unsafe { *self.0.isolate.get() })?;
+    let _scope = PersistentHandleScope::new(
+      isolate,
+      self
+        .0
+        .locker_required
+        .load(std::sync::atomic::Ordering::Relaxed),
+    );
+    Some(f(isolate))
   }
 
   /// Set the inner isolate pointer to null.
@@ -2505,13 +2588,18 @@ impl AsMut<Isolate> for Isolate {
 #[derive(Debug)]
 pub struct UnenteredIsolate {
   cxx_isolate: NonNull<RealIsolate>,
+  active_locker: bool,
   not_send_sync: PhantomData<Rc<()>>,
 }
 
 impl UnenteredIsolate {
   pub(crate) fn new(cxx_isolate: *mut RealIsolate) -> Self {
+    let cxx_isolate = NonNull::new(cxx_isolate).unwrap();
+    let isolate = unsafe { Isolate::from_raw_ref(&cxx_isolate) };
+    isolate.get_annex().require_locker();
     Self {
-      cxx_isolate: NonNull::new(cxx_isolate).unwrap(),
+      cxx_isolate,
+      active_locker: false,
       not_send_sync: PhantomData,
     }
   }
@@ -2530,26 +2618,31 @@ impl UnenteredIsolate {
 
 impl Drop for UnenteredIsolate {
   fn drop(&mut self) {
-    // A forgotten Locker ends its Rust borrow but leaves the isolate entered
-    // and locked. This check is required in release builds because disposing
-    // that isolate would violate V8's teardown preconditions.
     assert!(
-      !crate::scope::raw::Locker::is_locked(self.cxx_isolate),
+      !self.active_locker,
       "Cannot drop UnenteredIsolate while a Locker is held. \
        Drop the Locker first."
     );
 
     unsafe {
+      let (annex_ptr, _create_param_allocations) = {
+        let mut locker = Locker::new(self);
+        let isolate = &mut *locker;
+        let snapshot_creator =
+          isolate.get_annex_mut().maybe_snapshot_creator.take();
+        assert!(
+          snapshot_creator.is_none(),
+          "v8::UnenteredIsolate::create_blob must be called before dropping"
+        );
+        let (annex_ptr, create_param_allocations) =
+          isolate.prepare_annex_for_dispose();
+        Isolate::run_remaining_guaranteed_finalizers(annex_ptr);
+        Platform::notify_isolate_shutdown(&get_current_platform(), isolate);
+        (annex_ptr, create_param_allocations)
+      };
       let isolate = Isolate::from_raw_ref_mut(&mut self.cxx_isolate);
-      let snapshot_creator =
-        isolate.get_annex_mut().maybe_snapshot_creator.take();
-      assert!(
-        snapshot_creator.is_none(),
-        "v8::UnenteredIsolate::create_blob must be called before dropping"
-      );
-      isolate.dispose_annex();
-      Platform::notify_isolate_shutdown(&get_current_platform(), isolate);
       isolate.dispose();
+      Isolate::finish_annex_dispose(annex_ptr);
     }
   }
 }
@@ -2935,10 +3028,6 @@ impl AsRef<Isolate> for Isolate {
 /// requires the explicit unsafe contract on [`SendableUnenteredIsolate`], and
 /// each destination thread must create its own `Locker`.
 ///
-/// # Panic Safety
-///
-/// `Locker::new()` is panic-safe. If a panic occurs during construction,
-/// the isolate will be properly exited via a drop guard.
 pub struct Locker<'a> {
   raw: std::mem::ManuallyDrop<crate::scope::raw::Locker>,
   isolate: &'a mut UnenteredIsolate,
@@ -2957,6 +3046,7 @@ impl<'a> Locker<'a> {
   /// The ordering is critical: we must hold the lock before calling Enter(),
   /// because Enter() modifies V8's entry_stack_ which is not thread-safe.
   pub fn new(isolate: &'a mut UnenteredIsolate) -> Self {
+    assert!(!isolate.active_locker, "a Locker is already active");
     let isolate_ptr = isolate.cxx_isolate;
 
     // Acquire the lock first (must hold lock before touching entry_stack_)
@@ -2967,6 +3057,7 @@ impl<'a> Locker<'a> {
     unsafe {
       v8__Isolate__Enter(isolate_ptr.as_ptr());
     }
+    isolate.active_locker = true;
 
     Self {
       raw: std::mem::ManuallyDrop::new(raw),
@@ -2975,9 +3066,12 @@ impl<'a> Locker<'a> {
     }
   }
 
-  /// Returns `true` if the given isolate is currently locked by any `Locker`.
+  /// Returns `true` if a Rust [`Locker`] is active for the isolate.
+  ///
+  /// Safe code can use this after a locker was forgotten. While a live locker
+  /// exists, its mutable borrow prevents a separate call with the isolate.
   pub fn is_locked(isolate: &UnenteredIsolate) -> bool {
-    crate::scope::raw::Locker::is_locked(isolate.cxx_isolate)
+    isolate.active_locker
   }
 }
 
@@ -2989,6 +3083,7 @@ impl Drop for Locker<'_> {
       v8__Isolate__Exit(self.isolate.cxx_isolate.as_ptr());
       std::mem::ManuallyDrop::drop(&mut self.raw);
     }
+    self.isolate.active_locker = false;
   }
 }
 

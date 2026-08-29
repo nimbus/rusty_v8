@@ -20,6 +20,9 @@ jobs:
       - name: Clone repository
         uses: actions/checkout@v6
 
+      - name: Test release tooling
+        run: python3 tools/test_nimbus_release_tools.py
+
       - name: Read release manifest
         id: manifest
         shell: bash
@@ -112,28 +115,20 @@ jobs:
                 "${SYSROOT}/usr/include/"
               ;;
             aarch64-*)
-              ALPINE=v3.21
-              MIRROR="https://dl-cdn.alpinelinux.org/alpine/${ALPINE}/main"
-              APK_TOOLS_VERSION=2.14.6-r3
-              APK_TOOLS_SHA256=f0e0d34d6a8f1f9d8704bae6612b4627b96f13cd20db759e9b43085135cd234f
-              ALPINE_KEYS_VERSION=2.5-r0
-              ALPINE_KEYS_SHA256=f68a8cf46058b77d2ebccc33fec2a645d8da9e3791ffc385cf80403ec4810512
-              curl -fsSLo /tmp/apk.apk \
-                "${MIRROR}/x86_64/apk-tools-static-${APK_TOOLS_VERSION}.apk"
-              curl -fsSLo /tmp/alpine-keys.apk \
-                "${MIRROR}/x86_64/alpine-keys-${ALPINE_KEYS_VERSION}.apk"
-              echo "${APK_TOOLS_SHA256}  /tmp/apk.apk" | sha256sum -c -
-              echo "${ALPINE_KEYS_SHA256}  /tmp/alpine-keys.apk" | sha256sum -c -
-              tar -xzf /tmp/apk.apk -C /tmp sbin/apk.static
+              # Pin the Alpine userspace that carries apk and its trusted keys.
+              # Resolve signed target packages from the maintained v3.21 index
+              # so an apk package revision cannot make this workflow 404.
+              ALPINE_IMAGE=docker.io/library/alpine@sha256:f27cad9117495d32d067133afff942cb2dc745dfe9163e949f6bfe8a6a245339
               mkdir -p "${SYSROOT}"
-              tar --ignore-zeros -xzf /tmp/alpine-keys.apk \
-                -C "${SYSROOT}" --wildcards \
-                "etc/apk/keys/*" "usr/share/apk/keys/*"
-              cp -L "${SYSROOT}"/usr/share/apk/keys/aarch64/*.pub \
-                "${SYSROOT}/etc/apk/keys/"
-              sudo /tmp/sbin/apk.static --arch aarch64 -X "${MIRROR}" \
-                --root "${SYSROOT}" --initdb \
-                add musl-dev linux-headers
+              docker run --rm --platform linux/amd64 \
+                -v "${SYSROOT}:/sysroot" "${ALPINE_IMAGE}" sh -euc '
+                  mkdir -p /sysroot/etc/apk/keys
+                  cp -L /usr/share/apk/keys/aarch64/*.pub \
+                    /sysroot/etc/apk/keys/
+                  apk --arch aarch64 \
+                    -X https://dl-cdn.alpinelinux.org/alpine/v3.21/main \
+                    --root /sysroot --initdb add musl-dev linux-headers
+                '
               ;;
           esac
 

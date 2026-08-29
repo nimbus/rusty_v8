@@ -247,7 +247,73 @@ fn locker_send_isolate_between_threads() {
 }
 
 #[test]
+fn persistent_handles_reacquire_released_locker() {
+  let _setup_guard = setup();
+  let mut isolate = v8::Isolate::new_unentered(Default::default());
+
+  let (global, weak) = {
+    let mut locker = v8::Locker::new(&mut isolate);
+    let scope = pin!(v8::HandleScope::new(&mut *locker));
+    let scope = &mut scope.init();
+    let context = v8::Context::new(scope, Default::default());
+    let scope = &mut v8::ContextScope::new(scope, context);
+    let object = v8::Object::new(scope);
+    (v8::Global::new(scope, object), v8::Weak::new(scope, object))
+  };
+
+  let global_clone = global.clone();
+  let weak_clone = weak.clone();
+  drop(global_clone);
+  drop(weak_clone);
+  drop(global);
+  drop(weak);
+
+  let mut locker = v8::Locker::new(&mut isolate);
+  let scope = pin!(v8::HandleScope::new(&mut *locker));
+  let scope = &mut scope.init();
+  let context = v8::Context::new(scope, Default::default());
+  let scope = &mut v8::ContextScope::new(scope, context);
+  let code = v8::String::new(scope, "6 * 7").unwrap();
+  let script = v8::Script::compile(scope, code, None).unwrap();
+  let result = script.run(scope).unwrap();
+  assert_eq!(result.to_integer(scope).unwrap().value(), 42);
+}
+
+#[test]
+fn isolate_dispose_clears_persistent_handles_under_locker() {
+  let _setup_guard = setup();
+  let global;
+  let weak;
+  {
+    let mut isolate = v8::Isolate::new_unentered(Default::default());
+    {
+      let mut locker = v8::Locker::new(&mut isolate);
+      let scope = pin!(v8::HandleScope::new(&mut *locker));
+      let scope = &mut scope.init();
+      let context = v8::Context::new(scope, Default::default());
+      let scope = &mut v8::ContextScope::new(scope, context);
+      let object = v8::Object::new(scope);
+      global = v8::Global::new(scope, object);
+      weak = v8::Weak::new(scope, object);
+    }
+  }
+
+  assert!(weak.is_empty());
+  drop(weak);
+  drop(global);
+}
+
+#[test]
 fn forgotten_locker_prevents_isolate_dispose() {
+  assert_forgotten_locker_child_fails("same-thread");
+}
+
+#[test]
+fn forgotten_locker_prevents_cross_thread_isolate_dispose() {
+  assert_forgotten_locker_child_fails("cross-thread");
+}
+
+fn assert_forgotten_locker_child_fails(mode: &str) {
   let output = Command::new(std::env::current_exe().unwrap())
     .args([
       "--exact",
@@ -255,7 +321,7 @@ fn forgotten_locker_prevents_isolate_dispose() {
       "--ignored",
       "--nocapture",
     ])
-    .env("RUSTY_V8_FORGOTTEN_LOCKER_CHILD", "1")
+    .env("RUSTY_V8_FORGOTTEN_LOCKER_CHILD", mode)
     .output()
     .unwrap();
 
@@ -271,15 +337,29 @@ fn forgotten_locker_prevents_isolate_dispose() {
 #[test]
 #[ignore = "subprocess-only fixture for forgotten_locker_prevents_isolate_dispose"]
 fn forgotten_locker_dispose_child() {
-  assert_eq!(
-    std::env::var("RUSTY_V8_FORGOTTEN_LOCKER_CHILD").as_deref(),
-    Ok("1")
-  );
+  let mode = std::env::var("RUSTY_V8_FORGOTTEN_LOCKER_CHILD").unwrap();
   let _setup_guard = setup();
-  let mut isolate = v8::Isolate::new_unentered(Default::default());
-  let locker = v8::Locker::new(&mut isolate);
-  std::mem::forget(locker);
-  drop(isolate);
+  if mode == "same-thread" {
+    let mut isolate = v8::Isolate::new_unentered(Default::default());
+    let locker = v8::Locker::new(&mut isolate);
+    std::mem::forget(locker);
+    assert!(v8::Locker::is_locked(&isolate));
+    drop(isolate);
+  } else {
+    assert_eq!(mode, "cross-thread");
+    // SAFETY: the forgotten-lock test installs no Rust embedder state or
+    // external aliases. Drop must reject the move before it accesses V8.
+    let mut isolate = unsafe {
+      v8::SendableUnenteredIsolate::new_unchecked(v8::Isolate::new_unentered(
+        Default::default(),
+      ))
+    };
+    let locker = v8::Locker::new(isolate.get_mut());
+    std::mem::forget(locker);
+    assert!(v8::Locker::is_locked(isolate.get_mut()));
+    let panic = thread::spawn(move || drop(isolate)).join().unwrap_err();
+    std::panic::resume_unwind(panic);
+  }
 }
 
 fn setup() -> impl Drop {

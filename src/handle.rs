@@ -353,7 +353,10 @@ impl<T> Global<T> {
 impl<T> Clone for Global<T> {
   fn clone(&self) -> Self {
     let HandleInfo { data, host } = self.get_handle_info();
-    let mut isolate = unsafe { Isolate::from_non_null(host.get_isolate()) };
+    let isolate_ptr = host.get_isolate();
+    let liveness = unsafe { self.isolate_liveness.as_ref() };
+    let _locker = liveness.lock_for_persistent_handle(isolate_ptr);
+    let mut isolate = unsafe { Isolate::from_non_null(isolate_ptr) };
     unsafe { Self::new_raw(isolate.as_mut(), data) }
   }
 }
@@ -361,13 +364,15 @@ impl<T> Clone for Global<T> {
 impl<T> Drop for Global<T> {
   fn drop(&mut self) {
     unsafe {
-      if self.isolate_liveness.as_ref().get_isolate_ptr().is_null() {
+      let liveness = self.isolate_liveness.as_ref();
+      let Some(isolate) = NonNull::new(liveness.get_isolate_ptr()) else {
         // This `Global` handle is associated with an `Isolate` that has already
         // been disposed.
-      } else {
-        // Destroy the storage cell that contains the contents of this Global.
-        v8__Global__Reset(self.data.cast().as_ptr());
-      }
+        return;
+      };
+      let _locker = liveness.lock_for_persistent_handle(isolate);
+      // Destroy the storage cell that contains the contents of this Global.
+      v8__Global__Reset(self.data.cast().as_ptr());
     }
   }
 }
@@ -804,16 +809,17 @@ impl<T> Weak<T> {
 
   fn clone_raw(&self, finalizer: Option<FinalizerCallback>) -> Self {
     if let Some(data) = self.get_pointer() {
-      // SAFETY: We're in the isolate's thread, because Weak<T> isn't Send or
-      // Sync.
-      let isolate_ptr = unsafe { self.isolate_handle.get_isolate_ptr() };
-      if isolate_ptr.is_null() {
-        unreachable!("Isolate was dropped but weak handle wasn't reset.");
-      }
-      let mut isolate = unsafe { Isolate::from_raw_ptr(isolate_ptr) };
-      let finalizer_id = finalizer
-        .map(|finalizer| isolate.get_finalizer_map_mut().add(finalizer));
-      Self::new_raw(&mut isolate, data, finalizer_id)
+      self
+        .isolate_handle
+        .with_locked_isolate_ptr(|isolate_ptr| {
+          let mut isolate = unsafe { Isolate::from_non_null(isolate_ptr) };
+          let finalizer_id = finalizer
+            .map(|finalizer| isolate.get_finalizer_map_mut().add(finalizer));
+          Self::new_raw(&mut isolate, data, finalizer_id)
+        })
+        .unwrap_or_else(|| {
+          unreachable!("Isolate was dropped but weak handle wasn't reset.")
+        })
     } else {
       Weak {
         data: None,
@@ -999,21 +1005,6 @@ impl<T> Clone for Weak<T> {
 
 impl<T> Drop for Weak<T> {
   fn drop(&mut self) {
-    // Returns whether the finalizer existed.
-    let remove_finalizer = |finalizer_id: Option<FinalizerId>| -> bool {
-      if let Some(finalizer_id) = finalizer_id {
-        // SAFETY: We're in the isolate's thread because `Weak` isn't Send or Sync.
-        let isolate_ptr = unsafe { self.isolate_handle.get_isolate_ptr() };
-        if !isolate_ptr.is_null() {
-          let mut isolate = unsafe { Isolate::from_raw_ptr(isolate_ptr) };
-          let finalizer =
-            isolate.get_finalizer_map_mut().map.remove(&finalizer_id);
-          return finalizer.is_some();
-        }
-      }
-      false
-    };
-
     if let Some((data, finalizer_id, erased_weak_data)) =
       self.data.as_ref().and_then(|weak_data| {
         weak_data.pointer.get().map(|data| {
@@ -1021,8 +1012,18 @@ impl<T> Drop for Weak<T> {
         })
       })
     {
-      let isolate_ptr = unsafe { self.isolate_handle.get_isolate_ptr() };
-      if isolate_ptr.is_null() {
+      let removed_finalizer =
+        self.isolate_handle.with_locked_isolate_ptr(|isolate_ptr| {
+          // If the pointer is not None, the first pass callback hasn't been
+          // called yet, and resetting will prevent it from being called.
+          unsafe { v8__Global__Reset(data.cast().as_ptr()) };
+          let mut isolate = unsafe { Isolate::from_non_null(isolate_ptr) };
+          isolate.unregister_active_weak_data(erased_weak_data);
+          finalizer_id.and_then(|finalizer_id| {
+            isolate.get_finalizer_map_mut().map.remove(&finalizer_id)
+          })
+        });
+      let Some(removed_finalizer) = removed_finalizer else {
         // `dispose_annex()` should have cleared any live weak handles before
         // the isolate pointer was torn down. If we still observe one here,
         // leaking the bookkeeping is safer than touching a dead isolate or
@@ -1032,14 +1033,8 @@ impl<T> Drop for Weak<T> {
           Box::leak(weak_data);
         }
         return;
-      }
-
-      // If the pointer is not None, the first pass callback hasn't been
-      // called yet, and resetting will prevent it from being called.
-      unsafe { v8__Global__Reset(data.cast().as_ptr()) };
-      let mut isolate = unsafe { Isolate::from_raw_ptr(isolate_ptr) };
-      isolate.unregister_active_weak_data(erased_weak_data);
-      remove_finalizer(finalizer_id);
+      };
+      drop(removed_finalizer);
     } else if let Some(weak_data) = self.data.take() {
       if weak_data.cleared_for_dispose.get() {
         return;
@@ -1047,7 +1042,17 @@ impl<T> Drop for Weak<T> {
       // The second pass callback removes the finalizer, so if there is one,
       // the second pass hasn't yet run, and WeakData will have to be alive.
       // In that case we leak the WeakData but remove the finalizer.
-      if remove_finalizer(weak_data.finalizer_id) {
+      let removed_finalizer = weak_data.finalizer_id.and_then(|finalizer_id| {
+        self
+          .isolate_handle
+          .with_locked_isolate_ptr(|isolate_ptr| {
+            let mut isolate = unsafe { Isolate::from_non_null(isolate_ptr) };
+            isolate.get_finalizer_map_mut().map.remove(&finalizer_id)
+          })
+          .flatten()
+      });
+      if removed_finalizer.is_some() {
+        drop(removed_finalizer);
         weak_data.weak_dropped.set(true);
         Box::leak(weak_data);
       }
