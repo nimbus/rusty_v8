@@ -1044,37 +1044,51 @@ impl<T> Clone for Weak<T> {
 
 impl<T> Drop for Weak<T> {
   fn drop(&mut self) {
-    if let Some((data, finalizer_id, erased_weak_data)) =
-      self.data.as_ref().and_then(|weak_data| {
-        weak_data.pointer.get().map(|data| {
-          (data, weak_data.finalizer_id, weak_data.as_erased_non_null())
-        })
-      })
-    {
-      let removed_finalizer =
-        self.isolate_handle.with_locked_isolate_ptr(|isolate_ptr| {
-          // If the pointer is not None, the first pass callback hasn't been
-          // called yet, and resetting will prevent it from being called.
-          unsafe { v8__Global__Reset(data.cast().as_ptr()) };
-          let mut isolate = unsafe { Isolate::from_non_null(isolate_ptr) };
-          isolate.unregister_active_weak_data(erased_weak_data);
-          finalizer_id.and_then(|finalizer_id| {
-            isolate.get_finalizer_map_mut().map.remove(&finalizer_id)
-          })
+    let Some(weak_data) = self.data.as_ref() else {
+      return;
+    };
+    let finalizer_id = weak_data.finalizer_id;
+    let erased_weak_data = weak_data.as_erased_non_null();
+    let pointer_cleanup =
+      self.isolate_handle.with_locked_isolate_ptr(|isolate_ptr| {
+        let Some(data) = weak_data.pointer.get() else {
+          return (false, None);
+        };
+        // If the pointer is not None, the first pass callback hasn't been
+        // called yet, and resetting will prevent it from being called.
+        unsafe { v8__Global__Reset(data.cast().as_ptr()) };
+        let mut isolate = unsafe { Isolate::from_non_null(isolate_ptr) };
+        isolate.unregister_active_weak_data(erased_weak_data);
+        let removed_finalizer = finalizer_id.and_then(|finalizer_id| {
+          isolate.get_finalizer_map_mut().map.remove(&finalizer_id)
         });
-      let Some(removed_finalizer) = removed_finalizer else {
+        (true, removed_finalizer)
+      });
+
+    match pointer_cleanup {
+      Some((true, removed_finalizer)) => {
+        drop(removed_finalizer);
+        return;
+      }
+      Some((false, None)) => {}
+      Some((false, Some(_))) => unreachable!(),
+      None => {
         // `dispose_annex()` should have cleared any live weak handles before
         // the isolate pointer was torn down. If we still observe one here,
         // leaking the bookkeeping is safer than touching a dead isolate or
         // freeing memory V8 could still callback against.
+        if weak_data.cleared_for_dispose.get() {
+          return;
+        }
         if let Some(weak_data) = self.data.take() {
           weak_data.weak_dropped.set(true);
           Box::leak(weak_data);
         }
         return;
-      };
-      drop(removed_finalizer);
-    } else if let Some(weak_data) = self.data.take() {
+      }
+    }
+
+    if let Some(weak_data) = self.data.take() {
       if weak_data.cleared_for_dispose.get() {
         return;
       }

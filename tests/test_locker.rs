@@ -157,32 +157,33 @@ fn locker_state_preserved_across_locks() {
   let _setup_guard = setup();
   let mut isolate = new_unentered_isolate();
 
-  // First lock: execute some code
-  {
+  // First lock: create a context and store state in its global object.
+  let context = {
     let mut locker = v8::Locker::new(&mut isolate);
     let scope = pin!(v8::HandleScope::new(&mut *locker));
     let scope = &mut scope.init();
     let context = v8::Context::new(scope, Default::default());
     let scope = &mut v8::ContextScope::new(scope, context);
 
-    let code = v8::String::new(scope, "1 + 1").unwrap();
+    let code = v8::String::new(scope, "globalThis.persisted = 40").unwrap();
     let script = v8::Script::compile(scope, code, None).unwrap();
     let result = script.run(scope).unwrap();
-    assert_eq!(result.to_integer(scope).unwrap().value(), 2);
-  }
+    assert_eq!(result.to_integer(scope).unwrap().value(), 40);
+    v8::Global::new(scope, context)
+  };
 
-  // Second lock: isolate should still work correctly
+  // Second lock: reopen the same context and observe its retained state.
   {
     let mut locker = v8::Locker::new(&mut isolate);
     let scope = pin!(v8::HandleScope::new(&mut *locker));
     let scope = &mut scope.init();
-    let context = v8::Context::new(scope, Default::default());
+    let context = v8::Local::new(scope, &context);
     let scope = &mut v8::ContextScope::new(scope, context);
 
-    let code = v8::String::new(scope, "2 + 2").unwrap();
+    let code = v8::String::new(scope, "globalThis.persisted + 2").unwrap();
     let script = v8::Script::compile(scope, code, None).unwrap();
     let result = script.run(scope).unwrap();
-    assert_eq!(result.to_integer(scope).unwrap().value(), 4);
+    assert_eq!(result.to_integer(scope).unwrap().value(), 42);
   }
 }
 
