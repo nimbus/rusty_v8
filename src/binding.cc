@@ -55,7 +55,6 @@ static_assert(sizeof(v8::EscapableHandleScope) ==
 static_assert(sizeof(v8::PromiseRejectMessage) == sizeof(size_t) * 3,
               "PromiseRejectMessage size mismatch");
 
-
 static_assert(sizeof(v8::ScriptCompiler::CompilationDetails) ==
                   sizeof(int64_t) * 3,
               "CompilationDetails size mismatch");

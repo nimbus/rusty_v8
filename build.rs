@@ -72,7 +72,7 @@ fn main() {
 
   // Early exit
   if is_cargo_doc || is_rls {
-    print_prebuilt_src_binding_path();
+    print_packaged_src_binding_path();
     return;
   }
 
@@ -1103,7 +1103,10 @@ fn print_prebuilt_src_binding_path() {
   let name = prebuilt_binding_name(&target, profile, &features)
     .unwrap_or_else(|error| panic!("{error}"));
 
-  let src_binding_path = get_dirs().root.join("gen").join(name.clone());
+  let src_binding_path = downloaded_binding_path(
+    &PathBuf::from(env::var_os("OUT_DIR").unwrap()),
+    &name,
+  );
 
   let base = prebuilt_base();
   let version = prebuilt_version();
@@ -1114,6 +1117,33 @@ fn print_prebuilt_src_binding_path() {
     "cargo:rustc-env=RUSTY_V8_SRC_BINDING_PATH={}",
     src_binding_path.display()
   );
+}
+
+fn print_packaged_src_binding_path() {
+  if let Ok(binding) = env::var("RUSTY_V8_SRC_BINDING_PATH") {
+    println!("cargo:rustc-env=RUSTY_V8_SRC_BINDING_PATH={binding}");
+    return;
+  }
+
+  let target = env::var("TARGET").unwrap();
+  let profile = prebuilt_profile();
+  let features = prebuilt_features_suffix();
+  let name = prebuilt_binding_name(&target, profile, &features)
+    .unwrap_or_else(|error| panic!("{error}"));
+  let src_binding_path = packaged_binding_path(&get_dirs().root, &name);
+
+  println!(
+    "cargo:rustc-env=RUSTY_V8_SRC_BINDING_PATH={}",
+    src_binding_path.display()
+  );
+}
+
+fn downloaded_binding_path(out_dir: &Path, name: &str) -> PathBuf {
+  out_dir.join(name)
+}
+
+fn packaged_binding_path(root: &Path, name: &str) -> PathBuf {
+  root.join("gen").join(name)
 }
 
 // Chromium depot_tools contains helpers
@@ -1527,6 +1557,20 @@ edge [fontsize=10]
       ),
       "https://github.com/nimbus/rusty_v8/releases/download/\
        v150.4.0-nimbus.1/src_binding_release_aarch64-apple-darwin.rs"
+    );
+    assert_eq!(
+      downloaded_binding_path(
+        Path::new("target/build/out"),
+        "src_binding_release_aarch64-apple-darwin.rs"
+      ),
+      Path::new("target/build/out/src_binding_release_aarch64-apple-darwin.rs")
+    );
+    assert_eq!(
+      packaged_binding_path(
+        Path::new("crate"),
+        "src_binding_release_aarch64-apple-darwin.rs"
+      ),
+      Path::new("crate/gen/src_binding_release_aarch64-apple-darwin.rs")
     );
   }
 
