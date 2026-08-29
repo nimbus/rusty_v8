@@ -303,7 +303,7 @@ jobs:
           sudo apt update
           sudo apt install -yq --no-install-suggests --no-install-recommends \
             binfmt-support g++-aarch64-linux-gnu gcc-aarch64-linux-gnu \
-            libc6-arm64-cross qemu qemu-user \
+            libc6-arm64-cross qemu-user \
             qemu-user-binfmt
 
           sudo ln -sf /usr/aarch64-linux-gnu/lib/ld-linux-aarch64.so.1 \
@@ -319,14 +319,14 @@ jobs:
 
           sudo apt update
           sudo apt install -yq --no-install-suggests --no-install-recommends \
-            binfmt-support g++-10-riscv64-linux-gnu \
-            gcc-10-riscv64-linux-gnu libc6-riscv64-cross qemu qemu-user \
+            binfmt-support g++-riscv64-linux-gnu \
+            gcc-riscv64-linux-gnu libc6-riscv64-cross qemu-user \
             qemu-user-binfmt
 
           sudo ln -sf /usr/riscv64-linux-gnu/lib/ld-linux-riscv64-lp64d.so.1 \
                      /lib/ld-linux-riscv64-lp64d.so.1
 
-          echo "CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/riscv64-linux-gnu-gcc-10" >> "${GITHUB_ENV}"
+          echo "CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/riscv64-linux-gnu-gcc" >> "${GITHUB_ENV}"
           echo "QEMU_LD_PREFIX=/usr/riscv64-linux-gnu" >> "${GITHUB_ENV}"
 
       - name: Install iOS target

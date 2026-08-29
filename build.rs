@@ -961,7 +961,7 @@ fn cached_download_matches(
 fn asset_name_from_url(url: &str) -> &str {
   let path = url.split(['?', '#']).next().unwrap();
   path
-    .rsplit('/')
+    .rsplit(['/', '\\'])
     .next()
     .filter(|name| !name.is_empty())
     .unwrap()
@@ -1838,6 +1838,10 @@ edge [fontsize=10]
       parse_sha256_sidecar(&format!("{DIGEST}  asset.bin\n"), "asset.bin")
         .unwrap(),
       DIGEST
+    );
+    assert_eq!(
+      asset_name_from_url(r"C:\Users\runner\cache\asset.bin"),
+      "asset.bin"
     );
     assert!(
       parse_sha256_sidecar(&format!("{DIGEST}  different.bin\n"), "asset.bin")
