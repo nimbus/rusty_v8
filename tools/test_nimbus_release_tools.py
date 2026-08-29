@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import gzip
+import re
 import shutil
 import subprocess
 import sys
@@ -12,6 +13,9 @@ import unittest
 from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
+RELEASE_WORKFLOW = (
+    TOOLS.parent / ".github" / "workflows" / "nimbus-release.yml"
+)
 sys.path.insert(0, str(TOOLS))
 
 from nimbus_release_manifest import (  # noqa: E402
@@ -32,6 +36,19 @@ from verify_nimbus_release_assets import (  # noqa: E402
 
 
 class ManifestTests(unittest.TestCase):
+    def test_third_party_release_actions_are_commit_pinned(self) -> None:
+        mutable: list[str] = []
+        for line in RELEASE_WORKFLOW.read_text(encoding="utf-8").splitlines():
+            match = re.match(r"\s*uses:\s+([^@\s]+)@([^#\s]+)", line)
+            if match is None:
+                continue
+            action, revision = match.groups()
+            if action.startswith("./"):
+                continue
+            if re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+                mutable.append(f"{action}@{revision}")
+        self.assertEqual(mutable, [])
+
     def test_exact_matrix_and_asset_count(self) -> None:
         self.assertEqual(len(TARGET_CONFIGS), 7)
         self.assertEqual(len(expected_assets()), 44)

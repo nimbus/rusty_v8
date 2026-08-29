@@ -18,7 +18,7 @@ jobs:
       matrix: ${{ steps.manifest.outputs.matrix }}
     steps:
       - name: Clone repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Test release tooling
         run: python3 tools/test_nimbus_release_tools.py
@@ -58,13 +58,13 @@ jobs:
         run: git config --global core.symlinks true
 
       - name: Clone repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 10
           submodules: recursive
 
       - name: Install Rust
-        uses: dsherret/rust-toolchain-file@v1
+        uses: dsherret/rust-toolchain-file@3551321aa44dd44a0393eb3b6bdfbc5d25ecf621 # v1
 
       - name: Install nextest
         if: ${{ ! matrix.build_only }}
@@ -74,7 +74,7 @@ jobs:
           fallback: none
 
       - name: Install Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: 3.11.x
           architecture: x64
@@ -162,7 +162,7 @@ jobs:
         run: ./tools/install_llvm_windows.ps1
 
       - name: Install sccache
-        uses: mozilla-actions/sccache-action@v0.0.10
+        uses: mozilla-actions/sccache-action@9e7fa8a12102821edf02ca5dbea1acd0f89a2696 # v0.0.10
         with:
           version: v0.15.0
 
@@ -237,7 +237,7 @@ jobs:
         run: python tools/package_nimbus_release_assets.py --target ${{ matrix.target }} --features-suffix ptrcomp_simdutf
 
       - name: Upload release artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: nimbus-rusty-v8-${{ matrix.target }}
           path: release-assets/*
@@ -259,10 +259,10 @@ jobs:
       contents: write
     steps:
       - name: Clone repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Download release artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           path: release-artifacts
           pattern: nimbus-rusty-v8-*
