@@ -2703,7 +2703,8 @@ impl Drop for UnenteredIsolate {
           isolate.get_annex_mut().maybe_snapshot_creator.take();
         assert!(
           snapshot_creator.is_none(),
-          "v8::UnenteredIsolate::create_blob must be called before dropping"
+          "snapshot creation is unsupported for v8::UnenteredIsolate; \
+           v8::Isolate::snapshot_creator returns an OwnedIsolate"
         );
         let (annex_ptr, create_param_allocations, isolate_handle) =
           isolate.prepare_annex_for_dispose();

@@ -272,7 +272,7 @@ jobs:
           python3 tools/verify_nimbus_release_assets.py release-artifacts
           --flatten-to release-assets
 
-      - name: Publish release
+      - name: Upload draft release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -298,6 +298,26 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --clobber \
             release-assets/*
+
+      - name: Verify remote draft assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          remote_assets="$RUNNER_TEMP/nimbus-remote-release-assets"
+          mkdir "$remote_assets"
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir "$remote_assets"
+          python3 tools/verify_nimbus_release_assets.py "$remote_assets"
+
+      - name: Publish verified release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
           gh release edit "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --draft=false
