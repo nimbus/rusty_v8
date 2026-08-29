@@ -1,0 +1,70 @@
+error[E0277]: `NonNull<RealIsolate>` cannot be sent between threads safely
+  --> tests/compile_fail/unentered_isolate_not_send.rs:8:17
+   |
+ 8 |       scope.spawn(move || {
+   |             ----- ^------
+   |             |     |
+   |  ___________|_____within this `{closure@$DIR/tests/compile_fail/unentered_isolate_not_send.rs:8:17: 8:24}`
+   | |           |
+   | |           required by a bound introduced by this call
+ 9 | |       drop(isolate);
+10 | |     });
+   | |_____^ `NonNull<RealIsolate>` cannot be sent between threads safely
+   |
+   = help: within `{closure@$DIR/tests/compile_fail/unentered_isolate_not_send.rs:8:17: 8:24}`, the trait `Send` is not implemented for `NonNull<RealIsolate>`
+note: required because it appears within the type `UnenteredIsolate`
+  --> src/isolate.rs
+   |
+   | pub struct UnenteredIsolate {
+   |            ^^^^^^^^^^^^^^^^
+note: required because it's used within this closure
+  --> tests/compile_fail/unentered_isolate_not_send.rs:8:17
+   |
+ 8 |     scope.spawn(move || {
+   |                 ^^^^^^^
+note: required by a bound in `Scope::<'scope, 'env>::spawn`
+  --> $RUST/std/src/thread/scoped.rs
+   |
+   |     pub fn spawn<F, T>(&'scope self, f: F) -> ScopedJoinHandle<'scope, T>
+   |            ----- required by a bound in this associated function
+   |     where
+   |         F: FnOnce() -> T + Send + 'scope,
+   |                            ^^^^ required by this bound in `Scope::<'scope, 'env>::spawn`
+
+error[E0277]: `Rc<()>` cannot be sent between threads safely
+  --> tests/compile_fail/unentered_isolate_not_send.rs:8:17
+   |
+ 8 |       scope.spawn(move || {
+   |             ----- ^------
+   |             |     |
+   |  ___________|_____within this `{closure@$DIR/tests/compile_fail/unentered_isolate_not_send.rs:8:17: 8:24}`
+   | |           |
+   | |           required by a bound introduced by this call
+ 9 | |       drop(isolate);
+10 | |     });
+   | |_____^ `Rc<()>` cannot be sent between threads safely
+   |
+   = help: within `{closure@$DIR/tests/compile_fail/unentered_isolate_not_send.rs:8:17: 8:24}`, the trait `Send` is not implemented for `Rc<()>`
+note: required because it appears within the type `PhantomData<Rc<()>>`
+  --> $RUST/core/src/marker.rs
+   |
+   | pub struct PhantomData<T: PointeeSized>;
+   |            ^^^^^^^^^^^
+note: required because it appears within the type `UnenteredIsolate`
+  --> src/isolate.rs
+   |
+   | pub struct UnenteredIsolate {
+   |            ^^^^^^^^^^^^^^^^
+note: required because it's used within this closure
+  --> tests/compile_fail/unentered_isolate_not_send.rs:8:17
+   |
+ 8 |     scope.spawn(move || {
+   |                 ^^^^^^^
+note: required by a bound in `Scope::<'scope, 'env>::spawn`
+  --> $RUST/std/src/thread/scoped.rs
+   |
+   |     pub fn spawn<F, T>(&'scope self, f: F) -> ScopedJoinHandle<'scope, T>
+   |            ----- required by a bound in this associated function
+   |     where
+   |         F: FnOnce() -> T + Send + 'scope,
+   |                            ^^^^ required by this bound in `Scope::<'scope, 'env>::spawn`

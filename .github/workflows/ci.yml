@@ -309,8 +309,8 @@ jobs:
           sudo ln -sf /usr/aarch64-linux-gnu/lib/ld-linux-aarch64.so.1 \
                      /lib/ld-linux-aarch64.so.1
 
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc-10" >> ${GITHUB_ENV}
-          echo "QEMU_LD_PREFIX=/usr/aarch64-linux-gnu" >> ${GITHUB_ENV}
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/aarch64-linux-gnu-gcc-10" >> "${GITHUB_ENV}"
+          echo "QEMU_LD_PREFIX=/usr/aarch64-linux-gnu" >> "${GITHUB_ENV}"
 
       - name: Install cross compilation toolchain (riscv64)
         if: matrix.config.target == 'riscv64gc-unknown-linux-gnu'
@@ -326,8 +326,8 @@ jobs:
           sudo ln -sf /usr/riscv64-linux-gnu/lib/ld-linux-riscv64-lp64d.so.1 \
                      /lib/ld-linux-riscv64-lp64d.so.1
 
-          echo "CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/riscv64-linux-gnu-gcc-10" >> ${GITHUB_ENV}
-          echo "QEMU_LD_PREFIX=/usr/riscv64-linux-gnu" >> ${GITHUB_ENV}
+          echo "CARGO_TARGET_RISCV64GC_UNKNOWN_LINUX_GNU_LINKER=/usr/bin/riscv64-linux-gnu-gcc-10" >> "${GITHUB_ENV}"
+          echo "QEMU_LD_PREFIX=/usr/riscv64-linux-gnu" >> "${GITHUB_ENV}"
 
       - name: Install iOS target
         if: contains(matrix.config.target, 'ios')
@@ -362,23 +362,30 @@ jobs:
               # These foreign-arch packages are only extracted, never executed.
               ALPINE=v3.21
               MIRROR="https://dl-cdn.alpinelinux.org/alpine/${ALPINE}/main"
-              # Alpine's main repo only keeps the latest revision of each
-              # package, so resolve apk-tools-static's current version from the
-              # index rather than pinning a filename that would later 404.
-              APK_VER=$(curl -fsSL "${MIRROR}/x86_64/APKINDEX.tar.gz" \
-                | tar -xzO APKINDEX \
-                | awk -v RS='' -v FS='\n' '{p="";v="";for(i=1;i<=NF;i++){if($i~/^P:/)p=substr($i,3);if($i~/^V:/)v=substr($i,3)}if(p=="apk-tools-static")print v}')
+              APK_TOOLS_VERSION=2.14.6-r3
+              APK_TOOLS_SHA256=f0e0d34d6a8f1f9d8704bae6612b4627b96f13cd20db759e9b43085135cd234f
+              ALPINE_KEYS_VERSION=2.5-r0
+              ALPINE_KEYS_SHA256=f68a8cf46058b77d2ebccc33fec2a645d8da9e3791ffc385cf80403ec4810512
               curl -fsSLo /tmp/apk.apk \
-                "${MIRROR}/x86_64/apk-tools-static-${APK_VER}.apk"
+                "${MIRROR}/x86_64/apk-tools-static-${APK_TOOLS_VERSION}.apk"
+              curl -fsSLo /tmp/alpine-keys.apk \
+                "${MIRROR}/x86_64/alpine-keys-${ALPINE_KEYS_VERSION}.apk"
+              echo "${APK_TOOLS_SHA256}  /tmp/apk.apk" | sha256sum -c -
+              echo "${ALPINE_KEYS_SHA256}  /tmp/alpine-keys.apk" | sha256sum -c -
               tar -xzf /tmp/apk.apk -C /tmp sbin/apk.static
-              mkdir -p "${SYSROOT}/etc/apk"
-              /tmp/sbin/apk.static --arch aarch64 -X "${MIRROR}" \
-                --root "${SYSROOT}" --initdb --allow-untrusted \
+              mkdir -p "${SYSROOT}"
+              tar --ignore-zeros -xzf /tmp/alpine-keys.apk \
+                -C "${SYSROOT}" --wildcards \
+                "etc/apk/keys/*" "usr/share/apk/keys/*"
+              cp -L "${SYSROOT}"/usr/share/apk/keys/aarch64/*.pub \
+                "${SYSROOT}/etc/apk/keys/"
+              sudo /tmp/sbin/apk.static --arch aarch64 -X "${MIRROR}" \
+                --root "${SYSROOT}" --initdb \
                 add musl-dev linux-headers
               ;;
           esac
 
-          echo "RUSTY_V8_MUSL_SYSROOT=${SYSROOT}" >> ${GITHUB_ENV}
+          echo "RUSTY_V8_MUSL_SYSROOT=${SYSROOT}" >> "${GITHUB_ENV}"
 
       - name: Write git_submodule_status.txt
         run: git submodule status --recursive > git_submodule_status.txt
@@ -439,13 +446,13 @@ jobs:
           sudo apt-get update
           sudo apt-get -qq remove 'clang-*'
           sudo apt-get install lld-21 clang-21 clang-tools-21 clang-tidy-21 clang-format-21 libclang-21-dev -y
-          echo "LIBCLANG_PATH=/usr/lib/llvm-21/lib" >> $GITHUB_ENV
+          echo "LIBCLANG_PATH=/usr/lib/llvm-21/lib" >> "$GITHUB_ENV"
 
       - name: Set LIBCLANG_PATH (macOS)
         if: startsWith(matrix.config.os, 'macos')
         run: |
           XCODE_CLANG_LIB="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib"
-          echo "LIBCLANG_PATH=$XCODE_CLANG_LIB" >> $GITHUB_ENV
+          echo "LIBCLANG_PATH=$XCODE_CLANG_LIB" >> "$GITHUB_ENV"
 
       - name: check rust code formatting
         run: cargo fmt --check

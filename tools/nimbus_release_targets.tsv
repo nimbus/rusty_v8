@@ -1,0 +1,7 @@
+# os	target	pointer_compression	build_only	feature_suffixes
+macos-15	aarch64-apple-darwin	true	false	default,simdutf,ptrcomp_simdutf
+ubuntu-22.04	x86_64-unknown-linux-gnu	true	false	default,simdutf,ptrcomp_simdutf
+ubuntu-22.04	aarch64-unknown-linux-gnu	true	false	default,simdutf,ptrcomp_simdutf
+windows-2022	x86_64-pc-windows-msvc	false	false	default,simdutf
+ubuntu-22.04	x86_64-unknown-linux-musl	false	true	default,simdutf
+ubuntu-22.04	aarch64-unknown-linux-musl	false	true	default,simdutf

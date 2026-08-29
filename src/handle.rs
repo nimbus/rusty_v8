@@ -746,6 +746,7 @@ impl<T> Weak<T> {
       pointer: Default::default(),
       finalizer_id,
       weak_dropped: Cell::new(false),
+      cleared_for_dispose: Cell::new(false),
     });
     let data = data.cast().as_ptr();
     let data = unsafe {
@@ -1040,6 +1041,9 @@ impl<T> Drop for Weak<T> {
       isolate.unregister_active_weak_data(erased_weak_data);
       remove_finalizer(finalizer_id);
     } else if let Some(weak_data) = self.data.take() {
+      if weak_data.cleared_for_dispose.get() {
+        return;
+      }
       // The second pass callback removes the finalizer, so if there is one,
       // the second pass hasn't yet run, and WeakData will have to be alive.
       // In that case we leak the WeakData but remove the finalizer.
@@ -1104,6 +1108,7 @@ pub struct WeakData<T> {
   pointer: Cell<Option<NonNull<T>>>,
   finalizer_id: Option<FinalizerId>,
   weak_dropped: Cell<bool>,
+  cleared_for_dispose: Cell<bool>,
 }
 
 #[repr(C)]
@@ -1111,6 +1116,7 @@ pub(crate) struct WeakDataErased {
   pointer: Cell<Option<NonNull<c_void>>>,
   finalizer_id: Option<FinalizerId>,
   weak_dropped: Cell<bool>,
+  cleared_for_dispose: Cell<bool>,
 }
 
 const _: () = {
@@ -1139,6 +1145,13 @@ const _: () = {
   {
     panic!("WeakDataErased weak_dropped offset must match WeakData<Data>");
   }
+  if std::mem::offset_of!(WeakData<Data>, cleared_for_dispose)
+    != std::mem::offset_of!(WeakDataErased, cleared_for_dispose)
+  {
+    panic!(
+      "WeakDataErased cleared_for_dispose offset must match WeakData<Data>"
+    );
+  }
 };
 
 impl<T> WeakData<T> {
@@ -1161,6 +1174,7 @@ pub(crate) unsafe fn clear_weak_data_handle_for_dispose(
       v8__Global__Reset(data.as_ptr() as *const Data);
     }
   }
+  weak_data.cleared_for_dispose.set(true);
 }
 
 impl<T> std::fmt::Debug for WeakData<T> {

@@ -114,17 +114,25 @@ jobs:
             aarch64-*)
               ALPINE=v3.21
               MIRROR="https://dl-cdn.alpinelinux.org/alpine/${ALPINE}/main"
-              APK_VER=$(curl -fsSL \
-                "${MIRROR}/x86_64/APKINDEX.tar.gz" \
-                | tar -xzO APKINDEX \
-                | awk -v RS='' -v FS='\n' \
-                  '{p="";v="";for(i=1;i<=NF;i++){if($i~/^P:/)p=substr($i,3);if($i~/^V:/)v=substr($i,3)}if(p=="apk-tools-static")print v}')
+              APK_TOOLS_VERSION=2.14.6-r3
+              APK_TOOLS_SHA256=f0e0d34d6a8f1f9d8704bae6612b4627b96f13cd20db759e9b43085135cd234f
+              ALPINE_KEYS_VERSION=2.5-r0
+              ALPINE_KEYS_SHA256=f68a8cf46058b77d2ebccc33fec2a645d8da9e3791ffc385cf80403ec4810512
               curl -fsSLo /tmp/apk.apk \
-                "${MIRROR}/x86_64/apk-tools-static-${APK_VER}.apk"
+                "${MIRROR}/x86_64/apk-tools-static-${APK_TOOLS_VERSION}.apk"
+              curl -fsSLo /tmp/alpine-keys.apk \
+                "${MIRROR}/x86_64/alpine-keys-${ALPINE_KEYS_VERSION}.apk"
+              echo "${APK_TOOLS_SHA256}  /tmp/apk.apk" | sha256sum -c -
+              echo "${ALPINE_KEYS_SHA256}  /tmp/alpine-keys.apk" | sha256sum -c -
               tar -xzf /tmp/apk.apk -C /tmp sbin/apk.static
-              mkdir -p "${SYSROOT}/etc/apk"
-              /tmp/sbin/apk.static --arch aarch64 -X "${MIRROR}" \
-                --root "${SYSROOT}" --initdb --allow-untrusted \
+              mkdir -p "${SYSROOT}"
+              tar --ignore-zeros -xzf /tmp/alpine-keys.apk \
+                -C "${SYSROOT}" --wildcards \
+                "etc/apk/keys/*" "usr/share/apk/keys/*"
+              cp -L "${SYSROOT}"/usr/share/apk/keys/aarch64/*.pub \
+                "${SYSROOT}/etc/apk/keys/"
+              sudo /tmp/sbin/apk.static --arch aarch64 -X "${MIRROR}" \
+                --root "${SYSROOT}" --initdb \
                 add musl-dev linux-headers
               ;;
           esac

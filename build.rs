@@ -710,12 +710,28 @@ fn validate_prebuilt_configuration(
   target: &str,
   features: &str,
 ) -> Result<(), String> {
-  if target.ends_with("-linux-musl")
-    && (features.contains("_ptrcomp") || features.contains("_sandbox"))
-  {
+  let requested = if features.is_empty() {
+    "default"
+  } else {
+    features.trim_start_matches('_')
+  };
+  let published = include_str!("tools/nimbus_release_targets.tsv")
+    .lines()
+    .filter(|line| !line.is_empty() && !line.starts_with('#'))
+    .filter_map(|line| {
+      let mut fields = line.split('\t');
+      let _os = fields.next()?;
+      let manifest_target = fields.next()?;
+      let _pointer_compression = fields.next()?;
+      let _build_only = fields.next()?;
+      let suffixes = fields.next()?;
+      (fields.next().is_none() && manifest_target == target).then_some(suffixes)
+    })
+    .any(|suffixes| suffixes.split(',').any(|suffix| suffix == requested));
+  if !published {
     return Err(format!(
-      "Nimbus does not publish pointer-compressed or sandboxed rusty_v8 \
-       prebuilts for musl target {target}; set V8_FROM_SOURCE=1 or provide \
+      "Nimbus does not publish a rusty_v8 prebuilt for target {target} with \
+       feature configuration {requested}; set V8_FROM_SOURCE=1 or provide \
        both RUSTY_V8_ARCHIVE and RUSTY_V8_SRC_BINDING_PATH"
     ));
   }
@@ -1495,7 +1511,7 @@ edge [fontsize=10]
   }
 
   #[test]
-  fn test_musl_prebuilt_selectors() {
+  fn test_nimbus_prebuilt_selectors() {
     for target in ["x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl"] {
       assert_eq!(
         prebuilt_archive_name(target, "release", "").unwrap(),
@@ -1520,5 +1536,27 @@ edge [fontsize=10]
           .contains("does not publish")
       );
     }
+
+    for (target, features) in [
+      ("aarch64-apple-darwin", "_ptrcomp"),
+      ("x86_64-unknown-linux-gnu", "_sandbox"),
+      ("aarch64-unknown-linux-gnu", "_ptrcomp_sandbox_simdutf"),
+      ("x86_64-pc-windows-msvc", "_ptrcomp_simdutf"),
+      ("mips64-unknown-linux-gnu", ""),
+    ] {
+      let error =
+        prebuilt_archive_name(target, "release", features).unwrap_err();
+      assert!(error.contains("does not publish"));
+      assert!(error.contains("V8_FROM_SOURCE=1"));
+    }
+
+    assert!(
+      prebuilt_archive_name(
+        "aarch64-apple-darwin",
+        "release",
+        "_ptrcomp_simdutf"
+      )
+      .is_ok()
+    );
   }
 }

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import asdict, dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -14,27 +15,48 @@ class TargetConfig:
     target: str
     pointer_compression: bool
     build_only: bool = False
-
-    @property
-    def feature_suffixes(self) -> tuple[str, ...]:
-        suffixes = ("", "simdutf")
-        if self.pointer_compression:
-            return (*suffixes, "ptrcomp_simdutf")
-        return suffixes
+    feature_suffixes: tuple[str, ...] = ("", "simdutf")
 
 
-TARGET_CONFIGS = (
-    TargetConfig("macos-15", "aarch64-apple-darwin", True),
-    TargetConfig("ubuntu-22.04", "x86_64-unknown-linux-gnu", True),
-    TargetConfig("ubuntu-22.04", "aarch64-unknown-linux-gnu", True),
-    TargetConfig("windows-2022", "x86_64-pc-windows-msvc", False),
-    TargetConfig(
-        "ubuntu-22.04", "x86_64-unknown-linux-musl", False, build_only=True
-    ),
-    TargetConfig(
-        "ubuntu-22.04", "aarch64-unknown-linux-musl", False, build_only=True
-    ),
-)
+def _parse_bool(value: str) -> bool:
+    if value not in {"true", "false"}:
+        raise ValueError(f"invalid release-manifest boolean: {value}")
+    return value == "true"
+
+
+def _load_target_configs() -> tuple[TargetConfig, ...]:
+    path = Path(__file__).with_name("nimbus_release_targets.tsv")
+    configs: list[TargetConfig] = []
+    for line_number, line in enumerate(path.read_text().splitlines(), 1):
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split("\t")
+        if len(fields) != 5:
+            raise ValueError(
+                f"{path}:{line_number}: expected five tab-separated fields"
+            )
+        os_name, target, pointer_compression, build_only, suffixes = fields
+        parsed_suffixes = tuple(
+            "" if suffix == "default" else suffix
+            for suffix in suffixes.split(",")
+        )
+        if not parsed_suffixes or len(parsed_suffixes) != len(set(parsed_suffixes)):
+            raise ValueError(f"{path}:{line_number}: invalid feature suffixes")
+        configs.append(
+            TargetConfig(
+                os_name,
+                target,
+                _parse_bool(pointer_compression),
+                _parse_bool(build_only),
+                parsed_suffixes,
+            )
+        )
+    if not configs or len({config.target for config in configs}) != len(configs):
+        raise ValueError(f"{path}: targets must be present and unique")
+    return tuple(configs)
+
+
+TARGET_CONFIGS = _load_target_configs()
 
 
 def target_config(target: str) -> TargetConfig:
@@ -77,7 +99,16 @@ def expected_assets() -> tuple[str, ...]:
 
 
 def github_matrix() -> dict[str, list[dict[str, object]]]:
-    return {"include": [asdict(config) for config in TARGET_CONFIGS]}
+    return {
+        "include": [
+            {
+                key: value
+                for key, value in asdict(config).items()
+                if key != "feature_suffixes"
+            }
+            for config in TARGET_CONFIGS
+        ]
+    }
 
 
 def main() -> int:

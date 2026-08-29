@@ -53,10 +53,12 @@ use std::any::Any;
 use std::any::TypeId;
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::ffi::c_void;
 use std::fmt::{self, Debug, Formatter};
 use std::hash::BuildHasher;
 use std::hash::Hasher;
+use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::mem::align_of;
 use std::mem::forget;
@@ -70,6 +72,7 @@ use std::ptr::NonNull;
 use std::ptr::addr_of_mut;
 use std::ptr::drop_in_place;
 use std::ptr::null_mut;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicPtr;
@@ -1203,20 +1206,14 @@ impl Isolate {
     &mut self,
     weak_data: std::ptr::NonNull<WeakDataErased>,
   ) {
-    self.get_annex_mut().active_weak_data.push(weak_data);
+    self.get_annex_mut().active_weak_data.insert(weak_data);
   }
 
   pub(crate) fn unregister_active_weak_data(
     &mut self,
     weak_data: std::ptr::NonNull<WeakDataErased>,
   ) {
-    let active_weak_data = &mut self.get_annex_mut().active_weak_data;
-    if let Some(index) = active_weak_data
-      .iter()
-      .position(|entry| *entry == weak_data)
-    {
-      active_weak_data.swap_remove(index);
-    }
+    self.get_annex_mut().active_weak_data.remove(&weak_data);
   }
 
   /// Retrieve embedder-specific data from the isolate.
@@ -2097,7 +2094,7 @@ pub(crate) struct IsolateAnnex {
   create_param_allocations: Option<Box<dyn Any>>,
   slots: HashMap<TypeId, RawSlot, BuildTypeIdHasher>,
   finalizer_map: FinalizerMap,
-  active_weak_data: Vec<std::ptr::NonNull<WeakDataErased>>,
+  active_weak_data: HashSet<std::ptr::NonNull<WeakDataErased>>,
   maybe_snapshot_creator: Option<SnapshotCreator>,
   isolate_handle: IsolateHandle,
   global_liveness: NonNull<IsolateLiveness>,
@@ -2113,7 +2110,7 @@ impl IsolateAnnex {
       create_param_allocations: Some(create_param_allocations),
       slots: HashMap::default(),
       finalizer_map: FinalizerMap::default(),
-      active_weak_data: Vec::new(),
+      active_weak_data: HashSet::new(),
       maybe_snapshot_creator: None,
       isolate_handle: IsolateHandle::new(isolate),
       global_liveness: NonNull::from(global_liveness),
@@ -2495,12 +2492,11 @@ impl AsMut<Isolate> for Isolate {
 ///
 /// # Thread Safety
 ///
-/// `UnenteredIsolate` implements `Send`, meaning it can be transferred between
-/// threads. However, V8 isolates are not thread-safe by themselves. You must:
-///
-/// 1. Only access the isolate through a [`Locker`]
-/// 2. Never have multiple `Locker`s for the same isolate simultaneously
-///    (V8 will block if you try)
+/// `UnenteredIsolate` is neither `Send` nor `Sync`. The V8 lock protects V8's
+/// internal state, but the isolate can also own arbitrary Rust slots,
+/// finalizers, and weak-handle bookkeeping that are not safe to move between
+/// threads. Use [`SendableUnenteredIsolate`] only when an unsafe caller can
+/// uphold its complete cross-thread contract.
 ///
 /// # Dropping
 ///
@@ -2509,12 +2505,14 @@ impl AsMut<Isolate> for Isolate {
 #[derive(Debug)]
 pub struct UnenteredIsolate {
   cxx_isolate: NonNull<RealIsolate>,
+  not_send_sync: PhantomData<Rc<()>>,
 }
 
 impl UnenteredIsolate {
   pub(crate) fn new(cxx_isolate: *mut RealIsolate) -> Self {
     Self {
       cxx_isolate: NonNull::new(cxx_isolate).unwrap(),
+      not_send_sync: PhantomData,
     }
   }
 
@@ -2532,8 +2530,10 @@ impl UnenteredIsolate {
 
 impl Drop for UnenteredIsolate {
   fn drop(&mut self) {
-    // Safety check: ensure no Locker is held
-    debug_assert!(
+    // A forgotten Locker ends its Rust borrow but leaves the isolate entered
+    // and locked. This check is required in release builds because disposing
+    // that isolate would violate V8's teardown preconditions.
+    assert!(
       !crate::scope::raw::Locker::is_locked(self.cxx_isolate),
       "Cannot drop UnenteredIsolate while a Locker is held. \
        Drop the Locker first."
@@ -2554,11 +2554,46 @@ impl Drop for UnenteredIsolate {
   }
 }
 
-// SAFETY: UnenteredIsolate can be sent between threads because:
-// 1. The underlying V8 isolate is not accessed directly - all access goes through Locker
-// 2. Locker ensures proper synchronization when accessing the isolate
-// 3. V8's Locker internally uses a mutex to prevent concurrent access
-unsafe impl Send for UnenteredIsolate {}
+/// An explicitly cross-thread-capable owner for an unentered isolate.
+///
+/// The wrapper is `Send` but not `Sync`. Access on each thread still requires
+/// a [`Locker`]. Constructing it is unsafe because V8's lock cannot make Rust
+/// embedder state thread-safe.
+#[derive(Debug)]
+pub struct SendableUnenteredIsolate {
+  isolate: UnenteredIsolate,
+}
+
+impl SendableUnenteredIsolate {
+  /// Opts an unentered isolate into cross-thread transfer.
+  ///
+  /// # Safety
+  ///
+  /// The caller must ensure that every value reachable from the isolate is
+  /// safe to access and drop on every destination thread. This includes
+  /// create-parameter allocations, embedder slots, finalizer closures, weak
+  /// handles, and any external aliases. The caller must preserve this
+  /// invariant for the wrapper's complete lifetime, including state installed
+  /// through a later [`Locker`]. A live [`Locker`] must never cross threads.
+  pub unsafe fn new_unchecked(isolate: UnenteredIsolate) -> Self {
+    Self { isolate }
+  }
+
+  /// Borrows the wrapped isolate for access through a [`Locker`].
+  pub fn get_mut(&mut self) -> &mut UnenteredIsolate {
+    &mut self.isolate
+  }
+
+  /// Removes the cross-thread capability on the current thread.
+  pub fn into_inner(self) -> UnenteredIsolate {
+    self.isolate
+  }
+}
+
+// SAFETY: construction requires the caller to prove that all V8 and Rust
+// embedder state owned by the isolate remains safe to move, access, and drop on
+// each destination thread for the wrapper's complete lifetime.
+unsafe impl Send for SendableUnenteredIsolate {}
 
 /// Collection of V8 heap information.
 ///
@@ -2896,9 +2931,9 @@ impl AsRef<Isolate> for Isolate {
 /// # Thread Safety
 ///
 /// `Locker` does not implement `Send` or `Sync`. Once created, it must be used
-/// only on the thread where it was created. The underlying `UnenteredIsolate`
-/// implements `Send`, allowing it to be transferred between threads, but a new
-/// `Locker` must be created on each thread that needs to access the isolate.
+/// only on the thread where it was created. Cross-thread isolate ownership
+/// requires the explicit unsafe contract on [`SendableUnenteredIsolate`], and
+/// each destination thread must create its own `Locker`.
 ///
 /// # Panic Safety
 ///
@@ -2907,6 +2942,7 @@ impl AsRef<Isolate> for Isolate {
 pub struct Locker<'a> {
   raw: std::mem::ManuallyDrop<crate::scope::raw::Locker>,
   isolate: &'a mut UnenteredIsolate,
+  not_send_sync: PhantomData<Rc<()>>,
 }
 
 impl<'a> Locker<'a> {
@@ -2935,6 +2971,7 @@ impl<'a> Locker<'a> {
     Self {
       raw: std::mem::ManuallyDrop::new(raw),
       isolate,
+      not_send_sync: PhantomData,
     }
   }
 

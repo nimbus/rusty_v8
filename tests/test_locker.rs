@@ -1,6 +1,8 @@
 use std::pin::pin;
+use std::process::Command;
 use std::sync::mpsc;
 use std::thread;
+use std::time::Duration;
 
 #[test]
 fn locker_basic() {
@@ -10,7 +12,10 @@ fn locker_basic() {
     let mut locker = v8::Locker::new(&mut isolate);
     let scope = pin!(v8::HandleScope::new(&mut *locker));
     let scope = &mut scope.init();
-    let _context = v8::Context::new(scope, Default::default());
+    let context = v8::Context::new(scope, Default::default());
+    let scope = &mut v8::ContextScope::new(scope, context);
+    let value = v8::String::new(scope, "locked").unwrap();
+    assert_eq!(value.to_rust_string_lossy(scope), "locked");
   }
 }
 
@@ -35,10 +40,25 @@ fn locker_with_script() {
 #[test]
 fn unentered_isolate_no_lifo_constraint() {
   let _setup_guard = setup();
-  let isolate1 = v8::Isolate::new_unentered(Default::default());
+  let mut isolate1 = v8::Isolate::new_unentered(Default::default());
   let isolate2 = v8::Isolate::new_unentered(Default::default());
-  let isolate3 = v8::Isolate::new_unentered(Default::default());
+  let mut isolate3 = v8::Isolate::new_unentered(Default::default());
   drop(isolate2);
+
+  for (isolate, expression, expected) in
+    [(&mut isolate1, "5 + 6", 11), (&mut isolate3, "5 + 7", 12)]
+  {
+    let mut locker = v8::Locker::new(isolate);
+    let scope = pin!(v8::HandleScope::new(&mut *locker));
+    let scope = &mut scope.init();
+    let context = v8::Context::new(scope, Default::default());
+    let scope = &mut v8::ContextScope::new(scope, context);
+    let code = v8::String::new(scope, expression).unwrap();
+    let script = v8::Script::compile(scope, code, None).unwrap();
+    let result = script.run(scope).unwrap();
+    assert_eq!(result.to_integer(scope).unwrap().value(), expected);
+  }
+
   drop(isolate1);
   drop(isolate3);
 }
@@ -157,12 +177,17 @@ fn unentered_isolate_as_raw() {
 fn locker_send_isolate_between_threads() {
   let _setup_guard = setup();
 
-  // Create isolate on main thread
-  let mut isolate = v8::Isolate::new_unentered(Default::default());
+  // SAFETY: this test installs no slots, finalizers, weak handles, or external
+  // aliases. Every later access is through a same-thread Locker.
+  let mut isolate = unsafe {
+    v8::SendableUnenteredIsolate::new_unchecked(v8::Isolate::new_unentered(
+      Default::default(),
+    ))
+  };
 
   // Use on main thread first
   {
-    let mut locker = v8::Locker::new(&mut isolate);
+    let mut locker = v8::Locker::new(isolate.get_mut());
     let scope = pin!(v8::HandleScope::new(&mut *locker));
     let scope = &mut scope.init();
     let context = v8::Context::new(scope, Default::default());
@@ -180,7 +205,7 @@ fn locker_send_isolate_between_threads() {
   let handle = thread::spawn(move || {
     // Use isolate on worker thread - scope in separate block
     let value = {
-      let mut locker = v8::Locker::new(&mut isolate);
+      let mut locker = v8::Locker::new(isolate.get_mut());
       let scope = pin!(v8::HandleScope::new(&mut *locker));
       let scope = &mut scope.init();
       let context = v8::Context::new(scope, Default::default());
@@ -200,13 +225,15 @@ fn locker_send_isolate_between_threads() {
   });
 
   // Wait for result
-  let result = rx.recv().unwrap();
+  let result = rx
+    .recv_timeout(Duration::from_secs(10))
+    .expect("worker must execute under the Locker and return its result");
   assert_eq!(result, 4);
 
   // Get isolate back and use again on main thread
   let mut isolate = handle.join().unwrap();
   {
-    let mut locker = v8::Locker::new(&mut isolate);
+    let mut locker = v8::Locker::new(isolate.get_mut());
     let scope = pin!(v8::HandleScope::new(&mut *locker));
     let scope = &mut scope.init();
     let context = v8::Context::new(scope, Default::default());
@@ -217,6 +244,42 @@ fn locker_send_isolate_between_threads() {
     let result = script.run(scope).unwrap();
     assert_eq!(result.to_integer(scope).unwrap().value(), 6);
   }
+}
+
+#[test]
+fn forgotten_locker_prevents_isolate_dispose() {
+  let output = Command::new(std::env::current_exe().unwrap())
+    .args([
+      "--exact",
+      "forgotten_locker_dispose_child",
+      "--ignored",
+      "--nocapture",
+    ])
+    .env("RUSTY_V8_FORGOTTEN_LOCKER_CHILD", "1")
+    .output()
+    .unwrap();
+
+  assert!(!output.status.success());
+  assert!(
+    String::from_utf8_lossy(&output.stderr)
+      .contains("Cannot drop UnenteredIsolate while a Locker is held"),
+    "child stderr did not contain the held-lock diagnostic: {}",
+    String::from_utf8_lossy(&output.stderr)
+  );
+}
+
+#[test]
+#[ignore = "subprocess-only fixture for forgotten_locker_prevents_isolate_dispose"]
+fn forgotten_locker_dispose_child() {
+  assert_eq!(
+    std::env::var("RUSTY_V8_FORGOTTEN_LOCKER_CHILD").as_deref(),
+    Ok("1")
+  );
+  let _setup_guard = setup();
+  let mut isolate = v8::Isolate::new_unentered(Default::default());
+  let locker = v8::Locker::new(&mut isolate);
+  std::mem::forget(locker);
+  drop(isolate);
 }
 
 fn setup() -> impl Drop {
