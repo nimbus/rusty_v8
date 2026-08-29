@@ -4,7 +4,7 @@ use std::ffi::c_void;
 use std::hash::Hash;
 use std::hash::Hasher;
 use std::marker::PhantomData;
-use std::mem::forget;
+use std::mem::ManuallyDrop;
 use std::mem::transmute;
 use std::ops::Deref;
 use std::ptr::NonNull;
@@ -12,7 +12,6 @@ use std::ptr::NonNull;
 use crate::Data;
 use crate::Isolate;
 use crate::IsolateHandle;
-use crate::isolate::IsolateLiveness;
 use crate::isolate::RealIsolate;
 use crate::scope::GetIsolate;
 use crate::scope::PinScope;
@@ -285,7 +284,7 @@ impl<'s, T> Local<'s, T> {
 #[derive(Debug)]
 pub struct Global<T> {
   data: NonNull<T>,
-  isolate_liveness: NonNull<IsolateLiveness>,
+  isolate_handle: IsolateHandle,
 }
 
 impl<T> Global<T> {
@@ -305,10 +304,10 @@ impl<T> Global<T> {
     unsafe {
       let data = v8__Global__New((*isolate).as_real_ptr(), data) as *const T;
       let data = NonNull::new_unchecked(data as *mut _);
-      let isolate_liveness = (*isolate).global_liveness();
+      let isolate_handle = (*isolate).thread_safe_handle();
       Self {
         data,
-        isolate_liveness,
+        isolate_handle,
       }
     }
   }
@@ -322,7 +321,8 @@ impl<T> Global<T> {
   #[inline(always)]
   pub fn into_raw(self) -> NonNull<T> {
     let data = self.data;
-    forget(self);
+    let mut this = ManuallyDrop::new(self);
+    unsafe { std::ptr::drop_in_place(&mut this.isolate_handle) };
     data
   }
 
@@ -330,10 +330,10 @@ impl<T> Global<T> {
   /// original `Global`.
   #[inline(always)]
   pub unsafe fn from_raw(isolate: &mut Isolate, data: NonNull<T>) -> Self {
-    let isolate_liveness = isolate.global_liveness();
+    let isolate_handle = isolate.thread_safe_handle();
     Self {
       data,
-      isolate_liveness,
+      isolate_handle,
     }
   }
 
@@ -344,36 +344,30 @@ impl<T> Global<T> {
 
   #[inline(always)]
   fn get_handle_host(&self) -> HandleHost {
-    let isolate = unsafe { self.isolate_liveness.as_ref().get_isolate_ptr() };
-    NonNull::new(isolate)
-      .map_or(HandleHost::DisposedIsolate, HandleHost::Isolate)
+    (&self.isolate_handle).into()
   }
 }
 
 impl<T> Clone for Global<T> {
   fn clone(&self) -> Self {
-    let HandleInfo { data, host } = self.get_handle_info();
-    let isolate_ptr = host.get_isolate();
-    let liveness = unsafe { self.isolate_liveness.as_ref() };
-    let _locker = liveness.lock_for_persistent_handle(isolate_ptr);
-    let mut isolate = unsafe { Isolate::from_non_null(isolate_ptr) };
-    unsafe { Self::new_raw(isolate.as_mut(), data) }
+    self
+      .isolate_handle
+      .with_locked_isolate_ptr(|isolate_ptr| {
+        let mut isolate = unsafe { Isolate::from_non_null(isolate_ptr) };
+        unsafe { Self::new_raw(isolate.as_mut(), self.data) }
+      })
+      .unwrap_or_else(|| {
+        panic!("attempt to clone Global after its host Isolate was disposed")
+      })
   }
 }
 
 impl<T> Drop for Global<T> {
   fn drop(&mut self) {
-    unsafe {
-      let liveness = self.isolate_liveness.as_ref();
-      let Some(isolate) = NonNull::new(liveness.get_isolate_ptr()) else {
-        // This `Global` handle is associated with an `Isolate` that has already
-        // been disposed.
-        return;
-      };
-      let _locker = liveness.lock_for_persistent_handle(isolate);
+    self.isolate_handle.with_locked_isolate_ptr(|_| unsafe {
       // Destroy the storage cell that contains the contents of this Global.
       v8__Global__Reset(self.data.cast().as_ptr());
-    }
+    });
   }
 }
 
@@ -520,7 +514,7 @@ impl<T: Hash> Hash for Local<'_, T> {
 impl<T: Hash> Hash for Global<T> {
   fn hash<H: Hasher>(&self, state: &mut H) {
     unsafe {
-      if self.isolate_liveness.as_ref().get_isolate_ptr().is_null() {
+      if self.isolate_handle.get_isolate_ptr().is_null() {
         panic!("can't hash Global after its host Isolate has been disposed");
       }
       self.data.as_ref().hash(state);
@@ -808,23 +802,24 @@ impl<T> Weak<T> {
   }
 
   fn clone_raw(&self, finalizer: Option<FinalizerCallback>) -> Self {
-    if let Some(data) = self.get_pointer() {
-      self
+    if self.data.is_some() {
+      let cloned = self
         .isolate_handle
         .with_locked_isolate_ptr(|isolate_ptr| {
+          let data = self.data.as_ref()?.pointer.get()?;
           let mut isolate = unsafe { Isolate::from_non_null(isolate_ptr) };
           let finalizer_id = finalizer
             .map(|finalizer| isolate.get_finalizer_map_mut().add(finalizer));
-          Self::new_raw(&mut isolate, data, finalizer_id)
+          Some(Self::new_raw(&mut isolate, data, finalizer_id))
         })
-        .unwrap_or_else(|| {
-          unreachable!("Isolate was dropped but weak handle wasn't reset.")
-        })
-    } else {
-      Weak {
-        data: None,
-        isolate_handle: self.isolate_handle.clone(),
+        .flatten();
+      if let Some(cloned) = cloned {
+        return cloned;
       }
+    }
+    Weak {
+      data: None,
+      isolate_handle: self.isolate_handle.clone(),
     }
   }
 

@@ -144,6 +144,8 @@ name = "shell"
 [[example]]
 name = "process"
 
+# Compile build.rs as a real integration-test target so its cfg(test) release
+# selector and checksum coverage executes under Cargo and nextest.
 [[test]]
 name = "build"
 path = "build.rs"

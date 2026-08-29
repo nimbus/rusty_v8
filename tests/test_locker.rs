@@ -301,6 +301,7 @@ fn persistent_handle_drop_waits_for_active_locker() {
   let _setup_guard = setup();
   let mut isolate = new_unentered_isolate();
   let mut locker = v8::Locker::new(&mut isolate);
+  let isolate_handle = locker.thread_safe_handle();
   let global = {
     let scope = pin!(v8::HandleScope::new(&mut *locker));
     let scope = &mut scope.init();
@@ -328,6 +329,21 @@ fn persistent_handle_drop_waits_for_active_locker() {
     Err(mpsc::RecvTimeoutError::Timeout),
     "persistent-handle drop must block while another thread owns the Locker"
   );
+
+  let (probe_tx, probe_rx) = mpsc::channel();
+  let probe_handle = isolate_handle.clone();
+  let probe = thread::spawn(move || {
+    probe_tx
+      .send(probe_handle.is_execution_terminating())
+      .unwrap();
+  });
+  assert!(
+    !probe_rx.recv_timeout(Duration::from_secs(10)).expect(
+      "thread-safe isolate operations must not wait behind a V8 Locker"
+    ),
+    "an idle isolate must not report terminating execution"
+  );
+  probe.join().unwrap();
 
   drop(locker);
   dropped_rx

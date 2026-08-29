@@ -46,7 +46,6 @@ use crate::support::int;
 use crate::support::size_t;
 use crate::wasm::WasmStreaming;
 use crate::wasm::trampoline;
-use std::cell::UnsafeCell;
 use std::ffi::CStr;
 
 use std::any::Any;
@@ -74,9 +73,9 @@ use std::ptr::drop_in_place;
 use std::ptr::null_mut;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::sync::Condvar;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
-use std::sync::atomic::AtomicPtr;
 
 /// Policy for running microtasks:
 ///   - explicit: microtasks are invoked with the
@@ -1003,11 +1002,6 @@ impl Isolate {
     self.get_annex().isolate_handle.clone()
   }
 
-  #[inline(always)]
-  pub(crate) fn global_liveness(&self) -> NonNull<IsolateLiveness> {
-    self.get_annex().global_liveness
-  }
-
   /// See [`IsolateHandle::terminate_execution`]
   #[inline(always)]
   pub fn terminate_execution(&self) -> bool {
@@ -1040,7 +1034,7 @@ impl Isolate {
 
   /// Prepare annex teardown while keeping `ANNEX_SLOT` pointing at the annex.
   ///
-  /// Nulls the `IsolateHandle`'s inner pointer, reclaims
+  /// Nulls the shared isolate-access pointer, reclaims
   /// `create_param_allocations`, and drops the slot storage. The annex
   /// allocation itself stays alive and `ANNEX_SLOT` keeps pointing at it,
   /// so code that runs during the subsequent V8 teardown GC (weak
@@ -1056,7 +1050,7 @@ impl Isolate {
   /// Called once per isolate, from teardown paths only.
   unsafe fn prepare_annex_for_dispose(
     &mut self,
-  ) -> (*mut IsolateAnnex, Box<dyn Any>) {
+  ) -> (*mut IsolateAnnex, Box<dyn Any>, IsolateHandle) {
     let annex_ptr =
       self.get_data_internal(Self::ANNEX_SLOT) as *mut IsolateAnnex;
     assert!(!annex_ptr.is_null());
@@ -1083,11 +1077,12 @@ impl Isolate {
     // (ANNEX_SLOT is only cleared by code further down this teardown
     // path).
     unsafe {
-      // Null the `IsolateHandle` so handles outliving the isolate see a
-      // disposed state.
-      (*annex_ptr).global_liveness().dispose();
+      // Stop new isolate users. The returned handle lets the caller wait for
+      // users that pinned the pointer before this transition. The wait must
+      // happen after any outer V8 Locker is released.
       (*annex_ptr).isolate_handle.dispose();
     }
+    let isolate_handle = unsafe { (*annex_ptr).isolate_handle.clone() };
 
     // Reclaim `create_param_allocations` so the caller can keep it alive
     // for as long as V8 needs (during snapshot blob creation, V8 reads
@@ -1101,7 +1096,7 @@ impl Isolate {
     let slots = unsafe { std::mem::take(&mut (*annex_ptr).slots) };
     drop(slots);
 
-    (annex_ptr, create_param_allocations)
+    (annex_ptr, create_param_allocations, isolate_handle)
   }
 
   /// Drain `finalizer_map` and invoke any guaranteed finalizers.
@@ -1153,8 +1148,9 @@ impl Isolate {
   /// (no weak-callback re-entry to worry about here) and nulls `ANNEX_SLOT`
   /// so the snapshot creator's later isolate-dispose sees a clean slot.
   unsafe fn dispose_annex(&mut self) -> Box<dyn Any> {
-    let (annex_ptr, create_param_allocations) =
+    let (annex_ptr, create_param_allocations, isolate_handle) =
       unsafe { self.prepare_annex_for_dispose() };
+    isolate_handle.wait_for_quiescence();
     unsafe { Self::run_remaining_guaranteed_finalizers(annex_ptr) };
     let taken_annex =
       self.take_data_internal(Self::ANNEX_SLOT) as *mut IsolateAnnex;
@@ -2104,15 +2100,10 @@ pub(crate) struct IsolateAnnex {
   active_weak_data: HashSet<std::ptr::NonNull<WeakDataErased>>,
   maybe_snapshot_creator: Option<SnapshotCreator>,
   isolate_handle: IsolateHandle,
-  global_liveness: NonNull<IsolateLiveness>,
 }
 
 impl IsolateAnnex {
   fn new(isolate: &Isolate, create_param_allocations: Box<dyn Any>) -> Self {
-    // Globals may be dropped after their host isolate is disposed. Keep this
-    // tiny liveness cell valid so those late drops can observe the null isolate
-    // pointer without retaining an Arc per Global.
-    let global_liveness = Box::leak(Box::new(IsolateLiveness::new(isolate)));
     Self {
       create_param_allocations: Some(create_param_allocations),
       slots: HashMap::default(),
@@ -2120,17 +2111,10 @@ impl IsolateAnnex {
       active_weak_data: HashSet::new(),
       maybe_snapshot_creator: None,
       isolate_handle: IsolateHandle::new(isolate),
-      global_liveness: NonNull::from(global_liveness),
     }
   }
 
-  #[inline(always)]
-  fn global_liveness(&self) -> &IsolateLiveness {
-    unsafe { self.global_liveness.as_ref() }
-  }
-
   fn require_locker(&self) {
-    self.global_liveness().require_locker();
     self.isolate_handle.require_locker();
   }
 
@@ -2167,11 +2151,6 @@ impl IsolateAnnex {
   }
 }
 
-pub(crate) struct IsolateLiveness {
-  isolate: AtomicPtr<RealIsolate>,
-  locker_required: AtomicBool,
-}
-
 pub(crate) struct PersistentHandleScope {
   isolate: Option<NonNull<RealIsolate>>,
   locker: Option<crate::scope::raw::Locker>,
@@ -2203,46 +2182,6 @@ impl Drop for PersistentHandleScope {
   }
 }
 
-impl IsolateLiveness {
-  #[inline(always)]
-  fn new(isolate: &Isolate) -> Self {
-    Self {
-      isolate: AtomicPtr::new(isolate.as_real_ptr()),
-      locker_required: AtomicBool::new(false),
-    }
-  }
-
-  fn require_locker(&self) {
-    self
-      .locker_required
-      .store(true, std::sync::atomic::Ordering::Relaxed);
-  }
-
-  pub(crate) fn lock_for_persistent_handle(
-    &self,
-    isolate: NonNull<RealIsolate>,
-  ) -> PersistentHandleScope {
-    PersistentHandleScope::new(
-      isolate,
-      self
-        .locker_required
-        .load(std::sync::atomic::Ordering::Relaxed),
-    )
-  }
-
-  #[inline(always)]
-  fn dispose(&self) {
-    self
-      .isolate
-      .store(null_mut(), std::sync::atomic::Ordering::Relaxed);
-  }
-
-  #[inline(always)]
-  pub(crate) fn get_isolate_ptr(&self) -> *mut RealIsolate {
-    self.isolate.load(std::sync::atomic::Ordering::Relaxed)
-  }
-}
-
 impl Debug for IsolateAnnex {
   fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
     f.debug_struct("IsolateAnnex")
@@ -2252,20 +2191,61 @@ impl Debug for IsolateAnnex {
 }
 
 pub(crate) struct IsolateHandleInner {
-  /// Safety invariants:
-  /// - The 'main thread' must lock the mutex and reset `isolate` to null just
-  ///   before the isolate is disposed.
-  /// - Any other thread must lock the mutex while it's reading/using the
-  ///   `isolate` pointer.
-  // These two fields can be replaced with a `Mutex<*mut RealIsolate>` once
-  // `Mutex::data_ptr()` is stabilized.
-  isolate: UnsafeCell<*mut RealIsolate>,
-  isolate_mutex: Mutex<()>,
+  state: Mutex<IsolateHandleState>,
+  quiesced: Condvar,
   locker_required: AtomicBool,
 }
 
+struct IsolateHandleState {
+  isolate: *mut RealIsolate,
+  active_users: usize,
+}
+
+struct IsolateUse<'a> {
+  inner: &'a IsolateHandleInner,
+  isolate: NonNull<RealIsolate>,
+}
+
+// SAFETY: the raw isolate pointer is read and changed only while `state` is
+// locked. Every operation pins an active user before it releases that mutex,
+// and teardown waits for all active users before it destroys the isolate.
 unsafe impl Send for IsolateHandleInner {}
 unsafe impl Sync for IsolateHandleInner {}
+
+impl IsolateHandleInner {
+  fn pin(&self) -> Option<IsolateUse<'_>> {
+    let mut state = self.state.lock().unwrap();
+    let isolate = NonNull::new(state.isolate)?;
+    state.active_users += 1;
+    Some(IsolateUse {
+      inner: self,
+      isolate,
+    })
+  }
+
+  fn wait_for_quiescence(&self) {
+    let mut state = self.state.lock().unwrap();
+    while state.active_users != 0 {
+      state = self.quiesced.wait(state).unwrap();
+    }
+  }
+}
+
+impl IsolateUse<'_> {
+  fn is_live(&self) -> bool {
+    self.inner.state.lock().unwrap().isolate == self.isolate.as_ptr()
+  }
+}
+
+impl Drop for IsolateUse<'_> {
+  fn drop(&mut self) {
+    let mut state = self.inner.state.lock().unwrap();
+    state.active_users -= 1;
+    if state.active_users == 0 {
+      self.inner.quiesced.notify_all();
+    }
+  }
+}
 
 /// IsolateHandle is a thread-safe reference to an Isolate. Its main use is to
 /// terminate execution of a running isolate from another thread.
@@ -2278,11 +2258,10 @@ pub struct IsolateHandle(Arc<IsolateHandleInner>);
 
 impl fmt::Debug for IsolateHandle {
   fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-    if let Ok(_lock) = self.0.isolate_mutex.try_lock() {
-      // SAFETY: mutex lock is held
-      let ptr = unsafe { *self.0.isolate.get() };
+    if let Ok(state) = self.0.state.try_lock() {
       f.debug_struct("IsolateHandle")
-        .field("isolate_ptr", &ptr)
+        .field("isolate_ptr", &state.isolate)
+        .field("active_users", &state.active_users)
         .finish()
     } else {
       f.debug_struct("IsolateHandle").finish_non_exhaustive()
@@ -2294,8 +2273,11 @@ impl IsolateHandle {
   #[inline(always)]
   fn new(isolate: &Isolate) -> Self {
     let inner = Arc::new(IsolateHandleInner {
-      isolate: UnsafeCell::new(isolate.as_real_ptr()),
-      isolate_mutex: Mutex::new(()),
+      state: Mutex::new(IsolateHandleState {
+        isolate: isolate.as_real_ptr(),
+        active_users: 0,
+      }),
+      quiesced: Condvar::new(),
       locker_required: AtomicBool::new(false),
     });
     Self(inner)
@@ -2305,46 +2287,47 @@ impl IsolateHandle {
     self
       .0
       .locker_required
-      .store(true, std::sync::atomic::Ordering::Relaxed);
+      .store(true, std::sync::atomic::Ordering::Release);
   }
 
   pub(crate) fn with_locked_isolate_ptr<R>(
     &self,
     f: impl FnOnce(NonNull<RealIsolate>) -> R,
   ) -> Option<R> {
-    let _pointer_lock = self.0.isolate_mutex.lock().unwrap();
-    let isolate = NonNull::new(unsafe { *self.0.isolate.get() })?;
+    let isolate_use = self.0.pin()?;
     let _scope = PersistentHandleScope::new(
-      isolate,
+      isolate_use.isolate,
       self
         .0
         .locker_required
-        .load(std::sync::atomic::Ordering::Relaxed),
+        .load(std::sync::atomic::Ordering::Acquire),
     );
-    Some(f(isolate))
+    if !isolate_use.is_live() {
+      return None;
+    }
+    Some(f(isolate_use.isolate))
   }
 
   /// Set the inner isolate pointer to null.
   fn dispose(&self) {
-    let _lock = self.0.isolate_mutex.lock().unwrap();
-    // SAFETY: mutex lock is held
-    unsafe { *self.0.isolate.get() = null_mut() }
+    self.0.state.lock().unwrap().isolate = null_mut();
+  }
+
+  fn wait_for_quiescence(&self) {
+    self.0.wait_for_quiescence();
   }
 
   /// Access the isolate, if it hasn't yet been disposed of.
   ///
-  /// A lock is taken on the pointer and held for the scope of `f`, which
-  /// means the isolate can't be dropped until after `f` returns. If you
-  /// do something with the isolate afterwards, that needs to be verified
-  /// to be safe separately.
+  /// The isolate is pinned for the scope of `f`, which means teardown waits
+  /// for `f` to return. If you use the pointer afterwards, you must verify
+  /// that use separately.
   pub(crate) fn with_isolate_ptr<R>(
     &self,
     f: impl FnOnce(NonNull<RealIsolate>) -> R,
   ) -> Option<R> {
-    let _lock = self.0.isolate_mutex.lock().unwrap();
-    // SAFETY: mutex lock is held
-    let ptr = unsafe { *self.0.isolate.get() };
-    NonNull::new(ptr).map(f)
+    let isolate_use = self.0.pin()?;
+    Some(f(isolate_use.isolate))
   }
 
   /// Access the pointer for this isolate - it may be null.
@@ -2354,10 +2337,7 @@ impl IsolateHandle {
   /// the V8 isolate.
   // TODO: have this return an `Option<NonNull<RealIsolate>>`
   pub(crate) unsafe fn get_isolate_ptr(&self) -> *mut RealIsolate {
-    // SAFETY: this function must only be called from the main thread of the
-    // isolate. On that thread, the caller cannot race with teardown code that
-    // sets this pointer to null.
-    unsafe { *self.0.isolate.get() }
+    self.0.state.lock().unwrap().isolate
   }
 
   /// Forcefully terminate the current thread of JavaScript execution
@@ -2479,8 +2459,9 @@ impl Drop for OwnedIsolate {
       );
       // self.dispose_scope_root();
       self.exit();
-      let (annex_ptr, _create_param_allocations) =
+      let (annex_ptr, _create_param_allocations, isolate_handle) =
         self.prepare_annex_for_dispose();
+      isolate_handle.wait_for_quiescence();
       // Drain finalizers registered up to this point, before V8's final
       // teardown GC has a chance to fire weak callbacks that need the
       // annex.
@@ -2633,7 +2614,7 @@ impl Drop for UnenteredIsolate {
     );
 
     unsafe {
-      let (annex_ptr, _create_param_allocations) = {
+      let (annex_ptr, _create_param_allocations, isolate_handle) = {
         let mut locker = Locker::new(self);
         let isolate = &mut *locker;
         let snapshot_creator =
@@ -2642,12 +2623,13 @@ impl Drop for UnenteredIsolate {
           snapshot_creator.is_none(),
           "v8::UnenteredIsolate::create_blob must be called before dropping"
         );
-        let (annex_ptr, create_param_allocations) =
+        let (annex_ptr, create_param_allocations, isolate_handle) =
           isolate.prepare_annex_for_dispose();
         Isolate::run_remaining_guaranteed_finalizers(annex_ptr);
         Platform::notify_isolate_shutdown(&get_current_platform(), isolate);
-        (annex_ptr, create_param_allocations)
+        (annex_ptr, create_param_allocations, isolate_handle)
       };
+      isolate_handle.wait_for_quiescence();
       let isolate = Isolate::from_raw_ref_mut(&mut self.cxx_isolate);
       isolate.dispose();
       Isolate::finish_annex_dispose(annex_ptr);
