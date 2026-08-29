@@ -122,9 +122,28 @@ fn main() {
     return;
   }
 
+  validate_custom_archive_overrides(
+    env::var_os("RUSTY_V8_ARCHIVE").is_some(),
+    env::var_os("RUSTY_V8_SRC_BINDING_PATH").is_some(),
+  )
+  .unwrap_or_else(|error| panic!("{error}"));
+
   print_prebuilt_src_binding_path();
 
   download_static_lib_binaries();
+}
+
+fn validate_custom_archive_overrides(
+  has_archive: bool,
+  has_binding: bool,
+) -> Result<(), &'static str> {
+  if has_archive && !has_binding {
+    return Err(
+      "RUSTY_V8_ARCHIVE requires RUSTY_V8_SRC_BINDING_PATH so the custom V8 \
+       library and generated Rust binding stay matched",
+    );
+  }
+  Ok(())
 }
 
 fn acquire_lock() -> LockFile {
@@ -150,7 +169,7 @@ fn build_binding() {
     eprintln!("Warning: LIBCLANG_PATH not set. Bindgen requires Clang 21+.");
     eprintln!("Set LIBCLANG_PATH to your Clang 21 installation:");
     eprintln!("  Linux:  export LIBCLANG_PATH=/usr/lib/llvm-21/lib");
-    eprintln!("  macOS:  export LIBCLANG_PATH=$(brew --prefix llvm)/lib");
+    eprintln!("  macOS:  export LIBCLANG_PATH=$(brew --prefix llvm@21)/lib");
   }
 
   let output = Command::new(python())
@@ -1768,6 +1787,10 @@ edge [fontsize=10]
       "_ptrcomp_simdutf"
     );
     assert_eq!(
+      prebuilt_features_suffix_from_flags(true, false, false),
+      "_ptrcomp"
+    );
+    assert_eq!(
       prebuilt_features_suffix_from_flags(true, true, true),
       "_ptrcomp_sandbox_simdutf"
     );
@@ -1798,7 +1821,6 @@ edge [fontsize=10]
     }
 
     for (target, features) in [
-      ("aarch64-apple-darwin", "_ptrcomp"),
       ("x86_64-unknown-linux-gnu", "_sandbox"),
       ("aarch64-unknown-linux-gnu", "_ptrcomp_sandbox_simdutf"),
       ("x86_64-pc-windows-msvc", "_ptrcomp_simdutf"),
@@ -1810,6 +1832,10 @@ edge [fontsize=10]
       assert!(error.contains("V8_FROM_SOURCE=1"));
     }
 
+    assert!(
+      prebuilt_archive_name("aarch64-apple-darwin", "release", "_ptrcomp")
+        .is_ok()
+    );
     assert!(
       prebuilt_archive_name(
         "aarch64-apple-darwin",
@@ -1827,6 +1853,18 @@ edge [fontsize=10]
       assert!(error.contains("profile debug"));
       assert!(error.contains("V8_FROM_SOURCE=1"));
     }
+  }
+
+  #[test]
+  fn test_custom_archive_requires_matching_binding() {
+    assert!(validate_custom_archive_overrides(false, false).is_ok());
+    assert!(validate_custom_archive_overrides(false, true).is_ok());
+    assert!(validate_custom_archive_overrides(true, true).is_ok());
+    assert!(
+      validate_custom_archive_overrides(true, false)
+        .unwrap_err()
+        .contains("RUSTY_V8_SRC_BINDING_PATH")
+    );
   }
 
   #[test]

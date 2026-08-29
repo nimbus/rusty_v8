@@ -27,7 +27,7 @@ def main() -> int:
     parser.add_argument("--target", required=True)
     parser.add_argument(
         "--features-suffix",
-        choices=("", "simdutf", "ptrcomp_simdutf"),
+        choices=("", "simdutf", "ptrcomp", "ptrcomp_simdutf"),
         default="",
     )
     parser.add_argument("--target-dir", type=Path, default=Path("target"))

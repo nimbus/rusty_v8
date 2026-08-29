@@ -34,8 +34,8 @@ jobs:
     name: release ${{ matrix.target }}
     needs: release_matrix
     runs-on: ${{ matrix.os }}
-    # A cold AArch64 GNU run builds and tests default, simdutf, and ptrcomp
-    # configurations sequentially; the candidate proof exceeded four hours.
+    # A cold AArch64 GNU run builds and tests all four supported feature
+    # configurations sequentially; allow enough time for the full proof.
     timeout-minutes: 360
     strategy:
       fail-fast: false
@@ -199,6 +199,22 @@ jobs:
 
       - name: Package simdutf release
         run: python tools/package_nimbus_release_assets.py --target ${{ matrix.target }} --features-suffix simdutf
+
+      - name: Build ptrcomp release
+        if: matrix.pointer_compression
+        run: cargo build --all-targets --locked --release --target ${{ matrix.target }} --features v8_enable_pointer_compression
+
+      - name: Test ptrcomp release
+        if: matrix.pointer_compression
+        run: cargo nextest run --all-targets --locked --release --target ${{ matrix.target }} --features v8_enable_pointer_compression
+
+      - name: Clippy ptrcomp release
+        if: matrix.pointer_compression
+        run: cargo clippy --all-targets --locked --release --target ${{ matrix.target }} --features v8_enable_pointer_compression -- -D clippy::all
+
+      - name: Package ptrcomp release
+        if: matrix.pointer_compression
+        run: python tools/package_nimbus_release_assets.py --target ${{ matrix.target }} --features-suffix ptrcomp
 
       - name: Build ptrcomp simdutf release
         if: matrix.pointer_compression

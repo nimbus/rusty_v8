@@ -32,8 +32,8 @@ from verify_nimbus_release_assets import (  # noqa: E402
 class ManifestTests(unittest.TestCase):
     def test_exact_matrix_and_asset_count(self) -> None:
         self.assertEqual(len(TARGET_CONFIGS), 7)
-        self.assertEqual(len(expected_assets()), 36)
-        self.assertEqual(len(set(expected_assets())), 36)
+        self.assertEqual(len(expected_assets()), 44)
+        self.assertEqual(len(set(expected_assets())), 44)
         self.assertEqual(len(github_matrix()["include"]), 7)
 
     def test_musl_names_and_no_pointer_compression(self) -> None:
@@ -56,7 +56,24 @@ class ManifestTests(unittest.TestCase):
                 ),
             )
             with self.assertRaisesRegex(ValueError, "unsupported.*configuration"):
+                validate_configuration(target, "ptrcomp")
+            with self.assertRaisesRegex(ValueError, "unsupported.*configuration"):
                 validate_configuration(target, "ptrcomp_simdutf")
+
+    def test_pointer_compression_names(self) -> None:
+        for target in (
+            "aarch64-apple-darwin",
+            "x86_64-apple-darwin",
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+        ):
+            self.assertEqual(
+                asset_names(target, "ptrcomp"),
+                (
+                    f"librusty_v8_ptrcomp_release_{target}.a.gz",
+                    f"src_binding_ptrcomp_release_{target}.rs",
+                ),
+            )
 
     def test_unknown_target_is_unselectable(self) -> None:
         with self.assertRaisesRegex(ValueError, "unsupported.*target"):

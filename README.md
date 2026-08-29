@@ -109,6 +109,8 @@ for REL in v150.4.0-nimbus.1; do
     src_binding_release_x86_64-unknown-linux-gnu.rs \
     librusty_v8_simdutf_release_x86_64-unknown-linux-gnu.a.gz \
     src_binding_simdutf_release_x86_64-unknown-linux-gnu.rs \
+    librusty_v8_ptrcomp_release_x86_64-unknown-linux-gnu.a.gz \
+    src_binding_ptrcomp_release_x86_64-unknown-linux-gnu.rs \
     librusty_v8_ptrcomp_simdutf_release_x86_64-unknown-linux-gnu.a.gz \
     src_binding_ptrcomp_simdutf_release_x86_64-unknown-linux-gnu.rs \
   ; do
@@ -139,12 +141,15 @@ path. This is useful when you have a prebuilt archive somewhere:
 
 ```bash
 export RUSTY_V8_ARCHIVE=/path/to/custom_archive.a
+export RUSTY_V8_SRC_BINDING_PATH=/path/to/matching_src_binding.rs
 cargo build
 ```
 
-This explicit override is caller-trusted and does not require a checksum
-sidecar. Local override files are recopied on each build-script run so rebuilt
-archives are visible. Remote override URLs retain the URL-keyed local cache.
+This explicit override pair is caller-trusted and does not require checksum
+sidecars. The build stops before download if the archive has no matching
+binding path. Local override files are recopied on each build-script run so
+rebuilt archives are visible. Remote override URLs retain the URL-keyed local
+cache.
 Nimbus release and mirror downloads require and verify the published `.sha256`
 sidecar before the build script uses an asset.
 
