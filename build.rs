@@ -1338,10 +1338,12 @@ fn print_packaged_src_binding_path() {
   let profile = prebuilt_profile();
   let features = prebuilt_features_suffix();
   let name = src_binding_name(&target, profile, &features);
+  let url = prebuilt_asset_url(&prebuilt_base(), &prebuilt_version(), &name);
   let src_binding_path = preferred_existing_binding_path(
     &PathBuf::from(env::var_os("OUT_DIR").unwrap()),
     &get_dirs().root,
     &name,
+    &url,
   );
 
   println!(
@@ -1362,9 +1364,14 @@ fn preferred_existing_binding_path(
   out_dir: &Path,
   root: &Path,
   name: &str,
+  expected_url: &str,
 ) -> PathBuf {
   let downloaded = downloaded_binding_path(out_dir, name);
-  if downloaded.is_file() {
+  if cached_download_matches(
+    expected_url,
+    &downloaded,
+    ChecksumPolicy::Required,
+  ) {
     downloaded
   } else {
     packaged_binding_path(root, name)
@@ -1827,11 +1834,13 @@ edge [fontsize=10]
   #[test]
   fn test_preferred_existing_binding_path() {
     const NAME: &str = "src_binding_release_aarch64-apple-darwin.rs";
+    const URL: &str = "https://example.invalid/v150.4.0-nimbus.1/src_binding_release_aarch64-apple-darwin.rs";
     assert_eq!(
       preferred_existing_binding_path(
         Path::new("missing/out"),
         Path::new("crate"),
-        NAME
+        NAME,
+        URL,
       ),
       Path::new("crate/gen").join(NAME)
     );
@@ -1847,10 +1856,35 @@ edge [fontsize=10]
     let downloaded = downloaded_binding_path(&out_dir, NAME);
     std::fs::write(&downloaded, "binding").unwrap();
     assert_eq!(
-      preferred_existing_binding_path(&out_dir, Path::new("crate"), NAME),
+      preferred_existing_binding_path(&out_dir, Path::new("crate"), NAME, URL,),
+      Path::new("crate/gen").join(NAME)
+    );
+    let digest = sha256_file(&downloaded).unwrap();
+    std::fs::write(
+      static_checksum_path(&downloaded),
+      format!("{URL}\n{digest}\n{digest}\n"),
+    )
+    .unwrap();
+    assert_eq!(
+      preferred_existing_binding_path(&out_dir, Path::new("crate"), NAME, URL,),
       downloaded
     );
+    assert_eq!(
+      preferred_existing_binding_path(
+        &out_dir,
+        Path::new("crate"),
+        NAME,
+        "https://example.invalid/v150.4.0-nimbus.2/src_binding_release_aarch64-apple-darwin.rs",
+      ),
+      Path::new("crate/gen").join(NAME)
+    );
+    std::fs::write(&downloaded, "truncated").unwrap();
+    assert_eq!(
+      preferred_existing_binding_path(&out_dir, Path::new("crate"), NAME, URL,),
+      Path::new("crate/gen").join(NAME)
+    );
     std::fs::remove_file(&downloaded).unwrap();
+    std::fs::remove_file(static_checksum_path(&downloaded)).unwrap();
     std::fs::remove_dir(&out_dir).unwrap();
   }
 
