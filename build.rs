@@ -1485,12 +1485,12 @@ edge [fontsize=10]
   #[test]
   fn test_resolve_nimbus_prebuilt_version() {
     assert_eq!(
-      resolve_prebuilt_version("150.2.0", None),
-      "150.2.0-nimbus.1"
+      resolve_prebuilt_version("150.4.0", None),
+      "150.4.0-nimbus.1"
     );
     assert_eq!(
-      resolve_prebuilt_version("150.2.0", Some("150.2.0-nimbus.7".to_string())),
-      "150.2.0-nimbus.7"
+      resolve_prebuilt_version("150.4.0", Some("150.4.0-nimbus.7".to_string())),
+      "150.4.0-nimbus.7"
     );
   }
 
