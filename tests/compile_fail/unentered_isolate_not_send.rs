@@ -3,7 +3,7 @@
 // transfer requires SendableUnenteredIsolate's explicit unsafe contract.
 
 pub fn main() {
-  let isolate = v8::Isolate::new_unentered(mock());
+  let isolate = unsafe { v8::Isolate::new_unentered(mock()) };
   std::thread::scope(|scope| {
     scope.spawn(move || {
       drop(isolate);

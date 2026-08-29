@@ -761,7 +761,11 @@ fn prebuilt_binding_name(
   features: &str,
 ) -> Result<String, String> {
   validate_prebuilt_configuration(target, profile, features)?;
-  Ok(format!("src_binding{features}_{profile}_{target}.rs"))
+  Ok(src_binding_name(target, profile, features))
+}
+
+fn src_binding_name(target: &str, profile: &str, features: &str) -> String {
+  format!("src_binding{features}_{profile}_{target}.rs")
 }
 
 fn prebuilt_version() -> String {
@@ -1100,8 +1104,7 @@ fn print_prebuilt_src_binding_path() {
   let target = env::var("TARGET").unwrap();
   let profile = prebuilt_profile();
   let features = prebuilt_features_suffix();
-  let name = prebuilt_binding_name(&target, profile, &features)
-    .unwrap_or_else(|error| panic!("{error}"));
+  let name = src_binding_name(&target, profile, &features);
 
   let src_binding_path = downloaded_binding_path(
     &PathBuf::from(env::var_os("OUT_DIR").unwrap()),
@@ -1571,6 +1574,10 @@ edge [fontsize=10]
         "src_binding_release_aarch64-apple-darwin.rs"
       ),
       Path::new("crate/gen/src_binding_release_aarch64-apple-darwin.rs")
+    );
+    assert_eq!(
+      src_binding_name("aarch64-apple-ios", "debug", "_sandbox"),
+      "src_binding_sandbox_debug_aarch64-apple-ios.rs"
     );
   }
 

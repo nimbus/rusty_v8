@@ -4,10 +4,15 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
+fn new_unentered_isolate() -> v8::UnenteredIsolate {
+  // SAFETY: every test accesses V8 values only while its Locker is active.
+  unsafe { v8::Isolate::new_unentered(Default::default()) }
+}
+
 #[test]
 fn locker_basic() {
   let _setup_guard = setup();
-  let mut isolate = v8::Isolate::new_unentered(Default::default());
+  let mut isolate = new_unentered_isolate();
   {
     let mut locker = v8::Locker::new(&mut isolate);
     let scope = pin!(v8::HandleScope::new(&mut *locker));
@@ -22,7 +27,7 @@ fn locker_basic() {
 #[test]
 fn locker_with_script() {
   let _setup_guard = setup();
-  let mut isolate = v8::Isolate::new_unentered(Default::default());
+  let mut isolate = new_unentered_isolate();
   {
     let mut locker = v8::Locker::new(&mut isolate);
     let scope = pin!(v8::HandleScope::new(&mut *locker));
@@ -38,11 +43,11 @@ fn locker_with_script() {
 }
 
 #[test]
-fn unentered_isolate_no_lifo_constraint() {
+fn unentered_isolates_can_be_used_sequentially() {
   let _setup_guard = setup();
-  let mut isolate1 = v8::Isolate::new_unentered(Default::default());
-  let isolate2 = v8::Isolate::new_unentered(Default::default());
-  let mut isolate3 = v8::Isolate::new_unentered(Default::default());
+  let mut isolate1 = new_unentered_isolate();
+  let isolate2 = new_unentered_isolate();
+  let mut isolate3 = new_unentered_isolate();
   drop(isolate2);
 
   for (isolate, expression, expected) in
@@ -64,9 +69,47 @@ fn unentered_isolate_no_lifo_constraint() {
 }
 
 #[test]
+fn lockers_for_different_isolates_require_lifo_drop_order() {
+  let output = Command::new(std::env::current_exe().unwrap())
+    .args([
+      "--exact",
+      "out_of_order_locker_drop_child",
+      "--ignored",
+      "--nocapture",
+    ])
+    .env("RUSTY_V8_OUT_OF_ORDER_LOCKER_CHILD", "1")
+    .output()
+    .unwrap();
+
+  assert!(!output.status.success());
+  assert!(
+    String::from_utf8_lossy(&output.stderr)
+      .contains("Lockers for different isolates must be dropped in LIFO order"),
+    "child stderr did not contain the LIFO diagnostic: {}",
+    String::from_utf8_lossy(&output.stderr)
+  );
+}
+
+#[test]
+#[ignore = "subprocess-only fixture for LIFO Locker drop enforcement"]
+fn out_of_order_locker_drop_child() {
+  if std::env::var_os("RUSTY_V8_OUT_OF_ORDER_LOCKER_CHILD").is_none() {
+    return;
+  }
+
+  let _setup_guard = setup();
+  let mut isolate1 = std::mem::ManuallyDrop::new(new_unentered_isolate());
+  let mut isolate2 = std::mem::ManuallyDrop::new(new_unentered_isolate());
+  let locker1 = v8::Locker::new(&mut isolate1);
+  let locker2 = v8::Locker::new(&mut isolate2);
+  std::mem::forget(locker2);
+  drop(locker1);
+}
+
+#[test]
 fn locker_multiple_lock_unlock() {
   let _setup_guard = setup();
-  let mut isolate = v8::Isolate::new_unentered(Default::default());
+  let mut isolate = new_unentered_isolate();
 
   {
     let mut locker = v8::Locker::new(&mut isolate);
@@ -98,7 +141,7 @@ fn locker_multiple_lock_unlock() {
 #[test]
 fn locker_is_locked() {
   let _setup_guard = setup();
-  let mut isolate = v8::Isolate::new_unentered(Default::default());
+  let mut isolate = new_unentered_isolate();
 
   assert!(!v8::Locker::is_locked(&isolate));
   {
@@ -112,7 +155,7 @@ fn locker_is_locked() {
 #[test]
 fn locker_state_preserved_across_locks() {
   let _setup_guard = setup();
-  let mut isolate = v8::Isolate::new_unentered(Default::default());
+  let mut isolate = new_unentered_isolate();
 
   // First lock: execute some code
   {
@@ -146,7 +189,7 @@ fn locker_state_preserved_across_locks() {
 #[test]
 fn locker_drop_releases_lock() {
   let _setup_guard = setup();
-  let mut isolate = v8::Isolate::new_unentered(Default::default());
+  let mut isolate = new_unentered_isolate();
 
   // Create and immediately drop a locker
   {
@@ -166,7 +209,7 @@ fn locker_drop_releases_lock() {
 #[test]
 fn unentered_isolate_as_raw() {
   let _setup_guard = setup();
-  let isolate = v8::Isolate::new_unentered(Default::default());
+  let isolate = new_unentered_isolate();
 
   // as_raw should return a valid pointer
   let ptr = isolate.as_raw();
@@ -180,9 +223,7 @@ fn locker_send_isolate_between_threads() {
   // SAFETY: this test installs no slots, finalizers, weak handles, or external
   // aliases. Every later access is through a same-thread Locker.
   let mut isolate = unsafe {
-    v8::SendableUnenteredIsolate::new_unchecked(v8::Isolate::new_unentered(
-      Default::default(),
-    ))
+    v8::SendableUnenteredIsolate::new_unchecked(new_unentered_isolate())
   };
 
   // Use on main thread first
@@ -249,7 +290,7 @@ fn locker_send_isolate_between_threads() {
 #[test]
 fn persistent_handles_reacquire_released_locker() {
   let _setup_guard = setup();
-  let mut isolate = v8::Isolate::new_unentered(Default::default());
+  let mut isolate = new_unentered_isolate();
 
   let (global, weak) = {
     let mut locker = v8::Locker::new(&mut isolate);
@@ -285,7 +326,7 @@ fn isolate_dispose_clears_persistent_handles_under_locker() {
   let global;
   let weak;
   {
-    let mut isolate = v8::Isolate::new_unentered(Default::default());
+    let mut isolate = new_unentered_isolate();
     {
       let mut locker = v8::Locker::new(&mut isolate);
       let scope = pin!(v8::HandleScope::new(&mut *locker));
@@ -340,7 +381,7 @@ fn forgotten_locker_dispose_child() {
   let mode = std::env::var("RUSTY_V8_FORGOTTEN_LOCKER_CHILD").unwrap();
   let _setup_guard = setup();
   if mode == "same-thread" {
-    let mut isolate = v8::Isolate::new_unentered(Default::default());
+    let mut isolate = new_unentered_isolate();
     let locker = v8::Locker::new(&mut isolate);
     std::mem::forget(locker);
     assert!(v8::Locker::is_locked(&isolate));
@@ -350,9 +391,7 @@ fn forgotten_locker_dispose_child() {
     // SAFETY: the forgotten-lock test installs no Rust embedder state or
     // external aliases. Drop must reject the move before it accesses V8.
     let mut isolate = unsafe {
-      v8::SendableUnenteredIsolate::new_unchecked(v8::Isolate::new_unentered(
-        Default::default(),
-      ))
+      v8::SendableUnenteredIsolate::new_unchecked(new_unentered_isolate())
     };
     let locker = v8::Locker::new(isolate.get_mut());
     std::mem::forget(locker);

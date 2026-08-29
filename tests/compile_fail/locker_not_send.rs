@@ -3,7 +3,7 @@
 // A live Locker must stay on the thread that constructed it.
 
 pub fn main() {
-  let mut isolate = v8::Isolate::new_unentered(mock());
+  let mut isolate = unsafe { v8::Isolate::new_unentered(mock()) };
   let locker = v8::Locker::new(&mut isolate);
 
   std::thread::scope(|scope| {

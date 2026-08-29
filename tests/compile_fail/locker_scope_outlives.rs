@@ -3,7 +3,7 @@
 use std::pin::pin;
 
 pub fn main() {
-  let mut isolate = v8::Isolate::new_unentered(mock());
+  let mut isolate = unsafe { v8::Isolate::new_unentered(mock()) };
   let scope;
   {
     let mut locker = v8::Locker::new(&mut isolate);

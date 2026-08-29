@@ -106,8 +106,11 @@ for REL in v150.4.0-nimbus.1; do
   mkdir -p $RUSTY_V8_MIRROR/$REL
   for FILE in \
     librusty_v8_release_x86_64-unknown-linux-gnu.a.gz \
+    src_binding_release_x86_64-unknown-linux-gnu.rs \
     librusty_v8_simdutf_release_x86_64-unknown-linux-gnu.a.gz \
+    src_binding_simdutf_release_x86_64-unknown-linux-gnu.rs \
     librusty_v8_ptrcomp_simdutf_release_x86_64-unknown-linux-gnu.a.gz \
+    src_binding_ptrcomp_simdutf_release_x86_64-unknown-linux-gnu.rs \
   ; do
     if [ ! -f $RUSTY_V8_MIRROR/$REL/$FILE ]; then
       wget -O $RUSTY_V8_MIRROR/$REL/$FILE \

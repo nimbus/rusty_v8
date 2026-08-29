@@ -439,11 +439,11 @@ jobs:
           sudo apt-get install lld-21 clang-21 clang-tools-21 clang-tidy-21 clang-format-21 libclang-21-dev -y
           echo "LIBCLANG_PATH=/usr/lib/llvm-21/lib" >> "$GITHUB_ENV"
 
-      - name: Set LIBCLANG_PATH (macOS)
+      - name: Install Clang 21 (macOS)
         if: startsWith(matrix.config.os, 'macos')
         run: |
-          XCODE_CLANG_LIB="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/lib"
-          echo "LIBCLANG_PATH=$XCODE_CLANG_LIB" >> "$GITHUB_ENV"
+          brew install llvm@21
+          echo "LIBCLANG_PATH=$(brew --prefix llvm@21)/lib" >> "$GITHUB_ENV"
 
       - name: check rust code formatting
         run: cargo fmt --check

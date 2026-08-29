@@ -960,8 +960,14 @@ impl Isolate {
   /// Creates an isolate for use with `v8::Locker` in multi-threaded scenarios.
   ///
   /// Unlike `Isolate::new()`, this does not automatically enter the isolate.
+  ///
+  /// # Safety
+  ///
+  /// Every V8 value associated with this isolate must be accessed only while a
+  /// [`Locker`] for the isolate is active. This includes indirect access
+  /// through persistent-handle traits such as `Borrow`, `Hash`, and equality.
   #[allow(clippy::new_ret_no_self)]
-  pub fn new_unentered(params: CreateParams) -> UnenteredIsolate {
+  pub unsafe fn new_unentered(params: CreateParams) -> UnenteredIsolate {
     UnenteredIsolate::new(Self::new_impl(params))
   }
 
@@ -2560,7 +2566,10 @@ impl AsMut<Isolate> for Isolate {
 /// upon creation. Instead, you must use a [`Locker`] to access it:
 ///
 /// ```ignore
-/// let mut isolate = v8::Isolate::new_unentered(Default::default());
+/// // SAFETY: all V8 value access stays within a Locker below.
+/// let mut isolate = unsafe {
+///     v8::Isolate::new_unentered(Default::default())
+/// };
 ///
 /// // Access the isolate through a Locker
 /// {
@@ -3078,6 +3087,11 @@ impl<'a> Locker<'a> {
 impl Drop for Locker<'_> {
   fn drop(&mut self) {
     unsafe {
+      assert_eq!(
+        v8__Isolate__GetCurrent(),
+        self.isolate.cxx_isolate.as_ptr(),
+        "Lockers for different isolates must be dropped in LIFO order"
+      );
       // Exit first (while we still hold the lock), then release the lock.
       // Reverse order of new(): Lock -> Enter, so drop: Exit -> Unlock.
       v8__Isolate__Exit(self.isolate.cxx_isolate.as_ptr());

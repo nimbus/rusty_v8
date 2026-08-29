@@ -1,0 +1,7 @@
+error[E0133]: call to unsafe function `Isolate::new_unentered` is unsafe and requires unsafe block
+ --> tests/compile_fail/unentered_isolate_requires_unsafe.rs:6:18
+  |
+6 |   let _isolate = v8::Isolate::new_unentered(mock());
+  |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
+  |
+  = note: consult the function's documentation for information on how to avoid undefined behavior
