@@ -20,6 +20,7 @@ from nimbus_release_manifest import (  # noqa: E402
     expected_assets,
     github_matrix,
     validate_configuration,
+    validate_release_tag,
 )
 from verify_nimbus_release_assets import (  # noqa: E402
     flatten_release_tree,
@@ -78,6 +79,18 @@ class ManifestTests(unittest.TestCase):
     def test_unknown_target_is_unselectable(self) -> None:
         with self.assertRaisesRegex(ValueError, "unsupported.*target"):
             asset_names("mips64-unknown-linux-musl", "")
+
+    def test_release_tag_must_match_crate_version(self) -> None:
+        validate_release_tag("v150.4.0-nimbus.1", "150.4.0")
+        validate_release_tag("v150.4.0-nimbus.27", "150.4.0")
+        for tag in (
+            "v150.4.1-nimbus.1",
+            "v150.4.0-nimbus.next",
+            "v150.4.0-nimbus.0",
+            "v150.4.0-nimbus.01",
+        ):
+            with self.assertRaisesRegex(ValueError, "must match"):
+                validate_release_tag(tag, "150.4.0")
 
 
 class VerifierTests(unittest.TestCase):

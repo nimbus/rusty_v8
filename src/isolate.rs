@@ -2348,7 +2348,16 @@ impl IsolateHandle {
     &self,
     f: impl FnOnce(NonNull<RealIsolate>) -> R,
   ) -> Option<R> {
+    self.with_locked_isolate_ptr_inner(|| {}, f)
+  }
+
+  fn with_locked_isolate_ptr_inner<R>(
+    &self,
+    before_locker: impl FnOnce(),
+    f: impl FnOnce(NonNull<RealIsolate>) -> R,
+  ) -> Option<R> {
     let isolate_use = self.0.pin()?;
+    before_locker();
     let _scope = PersistentHandleScope::new(
       isolate_use.isolate,
       self
@@ -2360,6 +2369,15 @@ impl IsolateHandle {
       return None;
     }
     Some(f(isolate_use.isolate))
+  }
+
+  #[cfg(test)]
+  pub(crate) fn with_locked_isolate_ptr_observed<R>(
+    &self,
+    before_locker: impl FnOnce(),
+    f: impl FnOnce(NonNull<RealIsolate>) -> R,
+  ) -> Option<R> {
+    self.with_locked_isolate_ptr_inner(before_locker, f)
   }
 
   /// Set the inner isolate pointer to null.

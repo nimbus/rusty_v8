@@ -401,6 +401,20 @@ impl<T> Drop for Global<T> {
   }
 }
 
+#[cfg(test)]
+impl<T> Global<T> {
+  fn drop_with_locker_wait_observer(self, before_locker: impl FnOnce()) {
+    let mut this = ManuallyDrop::new(self);
+    let GlobalHost::LockerRequired(handle) = &this.host else {
+      panic!("observed Global drop requires a Locker-enabled isolate");
+    };
+    handle.with_locked_isolate_ptr_observed(before_locker, |_| unsafe {
+      v8__Global__Reset(this.data.cast().as_ptr());
+    });
+    unsafe { std::ptr::drop_in_place(&mut this.host) };
+  }
+}
+
 /// An implementation of [`Handle`] that can be constructed unsafely from a
 /// reference.
 pub(crate) struct UnsafeRefHandle<'a, T> {
@@ -1377,3 +1391,68 @@ impl<T> Drop for Eternal<T> {
 #[derive(Debug)]
 #[repr(transparent)]
 pub struct SealedLocal<T>(pub(crate) NonNull<T>);
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::Context;
+  use crate::ContextScope;
+  use crate::HandleScope;
+  use crate::Locker;
+  use crate::Object;
+  use std::pin::pin;
+  use std::sync::mpsc;
+  use std::thread;
+  use std::time::Duration;
+
+  struct SendableGlobal(Global<Object>);
+
+  // SAFETY: the worker can only destroy this persistent handle. The observed
+  // drop path acquires the host isolate's V8 Locker, and the isolate outlives
+  // the worker.
+  unsafe impl Send for SendableGlobal {}
+
+  impl SendableGlobal {
+    fn drop_with_locker_wait_observer(self, before_locker: impl FnOnce()) {
+      self.0.drop_with_locker_wait_observer(before_locker);
+    }
+  }
+
+  #[test]
+  fn persistent_handle_drop_waits_for_active_locker() {
+    crate::initialize_v8();
+    // SAFETY: the test accesses V8 values only while a Locker is active.
+    let mut isolate =
+      unsafe { crate::Isolate::new_unentered(Default::default()) };
+    let mut locker = Locker::new(&mut isolate);
+    let global = {
+      let scope = pin!(HandleScope::new(&mut *locker));
+      let scope = &mut scope.init();
+      let context = Context::new(scope, Default::default());
+      let scope = &mut ContextScope::new(scope, context);
+      SendableGlobal(Global::new(scope, Object::new(scope)))
+    };
+
+    let (waiting_tx, waiting_rx) = mpsc::sync_channel(0);
+    let (dropped_tx, dropped_rx) = mpsc::channel();
+    let worker = thread::spawn(move || {
+      global.drop_with_locker_wait_observer(|| waiting_tx.send(()).unwrap());
+      dropped_tx.send(()).unwrap();
+    });
+
+    waiting_rx
+      .recv_timeout(Duration::from_secs(10))
+      .expect("Global drop must enter the Locker acquisition path");
+    assert_eq!(
+      dropped_rx.recv_timeout(Duration::from_millis(250)),
+      Err(mpsc::RecvTimeoutError::Timeout),
+      "Global drop must wait while another thread owns the Locker"
+    );
+
+    drop(locker);
+    dropped_rx
+      .recv_timeout(Duration::from_secs(10))
+      .expect("Global drop must finish after Locker release");
+    worker.join().unwrap();
+  }
+}

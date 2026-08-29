@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -57,6 +59,21 @@ def _load_target_configs() -> tuple[TargetConfig, ...]:
 
 
 TARGET_CONFIGS = _load_target_configs()
+
+
+def crate_version() -> str:
+    manifest = Path(__file__).resolve().parent.parent / "Cargo.toml"
+    package = tomllib.loads(manifest.read_text(encoding="utf-8"))["package"]
+    return str(package["version"])
+
+
+def validate_release_tag(tag: str, package_version: str) -> None:
+    pattern = rf"v{re.escape(package_version)}-nimbus\.[1-9][0-9]*"
+    if re.fullmatch(pattern, tag) is None:
+        raise ValueError(
+            f"release tag {tag!r} must match "
+            f"v{package_version}-nimbus.<positive-integer>"
+        )
 
 
 def target_config(target: str) -> TargetConfig:
@@ -115,13 +132,23 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--github-matrix", action="store_true")
     parser.add_argument("--asset-count", action="store_true")
+    parser.add_argument("--verify-tag")
     args = parser.parse_args()
-    if args.github_matrix == args.asset_count:
+    selected = sum(
+        (args.github_matrix, args.asset_count, args.verify_tag is not None)
+    )
+    if selected != 1:
         parser.error("select exactly one output mode")
     if args.github_matrix:
         print(json.dumps(github_matrix(), separators=(",", ":"), sort_keys=True))
-    else:
+    elif args.asset_count:
         print(len(expected_assets()))
+    else:
+        try:
+            validate_release_tag(args.verify_tag, crate_version())
+        except ValueError as error:
+            parser.error(str(error))
+        print(f"verified release tag {args.verify_tag}")
     return 0
 
 
