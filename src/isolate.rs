@@ -2223,7 +2223,7 @@ impl Drop for PersistentHandleScope {
     if let Some(isolate) = self.isolate.take() {
       unsafe { v8__Isolate__Exit(isolate.as_ptr()) };
     }
-    self.locker.take();
+    drop(self.locker.take());
   }
 }
 
