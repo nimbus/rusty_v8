@@ -72,8 +72,9 @@ source. The CI always builds from source.
 
 ## The `V8_FORCE_DEBUG` environment variable
 
-By default `rusty_v8` will link against release builds of `v8`, if you want to
-use a debug build of `v8` set `V8_FORCE_DEBUG=true`.
+By default `rusty_v8` links against release builds of `v8`. To build a debug
+copy, set both `V8_FORCE_DEBUG=true` and `V8_FROM_SOURCE=1`. Nimbus releases do
+not publish debug prebuilt archives.
 
 We default to release builds of `v8` due to performance & CI reasons in `deno`.
 

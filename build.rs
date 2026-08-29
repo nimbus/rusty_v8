@@ -708,6 +708,7 @@ fn static_lib_name_for_target(target: &str, suffix: &str) -> String {
 
 fn validate_prebuilt_configuration(
   target: &str,
+  profile: &str,
   features: &str,
 ) -> Result<(), String> {
   let requested = if features.is_empty() {
@@ -728,11 +729,12 @@ fn validate_prebuilt_configuration(
       (fields.next().is_none() && manifest_target == target).then_some(suffixes)
     })
     .any(|suffixes| suffixes.split(',').any(|suffix| suffix == requested));
-  if !published {
+  if profile != "release" || !published {
     return Err(format!(
       "Nimbus does not publish a rusty_v8 prebuilt for target {target} with \
-       feature configuration {requested}; set V8_FROM_SOURCE=1 or provide \
-       both RUSTY_V8_ARCHIVE and RUSTY_V8_SRC_BINDING_PATH"
+       profile {profile} and feature configuration {requested}; set \
+       V8_FROM_SOURCE=1 or provide both RUSTY_V8_ARCHIVE and \
+       RUSTY_V8_SRC_BINDING_PATH"
     ));
   }
   Ok(())
@@ -743,7 +745,7 @@ fn prebuilt_archive_name(
   profile: &str,
   features: &str,
 ) -> Result<String, String> {
-  validate_prebuilt_configuration(target, features)?;
+  validate_prebuilt_configuration(target, profile, features)?;
   Ok(format!(
     "{}.gz",
     static_lib_name_for_target(
@@ -758,7 +760,7 @@ fn prebuilt_binding_name(
   profile: &str,
   features: &str,
 ) -> Result<String, String> {
-  validate_prebuilt_configuration(target, features)?;
+  validate_prebuilt_configuration(target, profile, features)?;
   Ok(format!("src_binding{features}_{profile}_{target}.rs"))
 }
 
@@ -776,20 +778,30 @@ fn resolve_prebuilt_version(
   override_version.unwrap_or_else(|| format!("{package_version}-nimbus.1"))
 }
 
+const DEFAULT_NIMBUS_PREBUILT_BASE: &str =
+  "https://github.com/nimbus/rusty_v8/releases/download";
+
+fn prebuilt_base() -> String {
+  env::var("RUSTY_V8_MIRROR")
+    .unwrap_or_else(|_| DEFAULT_NIMBUS_PREBUILT_BASE.into())
+}
+
+fn prebuilt_asset_url(base: &str, version: &str, name: &str) -> String {
+  format!("{base}/v{version}/{name}")
+}
+
 fn static_lib_url() -> String {
   if let Ok(custom_archive) = env::var("RUSTY_V8_ARCHIVE") {
     return custom_archive;
   }
-  let default_base = "https://github.com/nimbus/rusty_v8/releases/download";
-  let base =
-    env::var("RUSTY_V8_MIRROR").unwrap_or_else(|_| default_base.into());
+  let base = prebuilt_base();
   let version = prebuilt_version();
   let target = env::var("TARGET").unwrap();
   let profile = prebuilt_profile();
   let features = prebuilt_features_suffix();
   let archive = prebuilt_archive_name(&target, profile, &features)
     .unwrap_or_else(|error| panic!("{error}"));
-  format!("{base}/v{version}/{archive}")
+  prebuilt_asset_url(&base, &version, &archive)
 }
 
 fn static_lib_path() -> PathBuf {
@@ -842,7 +854,7 @@ fn download_file(url: &str, filename: &Path) {
 
   // Checksum (i.e: url) to avoid re-downloads
   match fs::read_to_string(static_checksum_path(filename)) {
-    Ok(c) if c == static_lib_url() => return,
+    Ok(c) if c == url => return,
     _ => {}
   };
 
@@ -1093,11 +1105,10 @@ fn print_prebuilt_src_binding_path() {
 
   let src_binding_path = get_dirs().root.join("gen").join(name.clone());
 
-  if let Ok(base) = env::var("RUSTY_V8_MIRROR") {
-    let version = prebuilt_version();
-    let url = format!("{base}/v{version}/{name}");
-    download_file(&url, &src_binding_path);
-  }
+  let base = prebuilt_base();
+  let version = prebuilt_version();
+  let url = prebuilt_asset_url(&base, &version, &name);
+  download_file(&url, &src_binding_path);
 
   println!(
     "cargo:rustc-env=RUSTY_V8_SRC_BINDING_PATH={}",
@@ -1508,6 +1519,15 @@ edge [fontsize=10]
       resolve_prebuilt_version("150.4.0", Some("150.4.0-nimbus.7".to_string())),
       "150.4.0-nimbus.7"
     );
+    assert_eq!(
+      prebuilt_asset_url(
+        DEFAULT_NIMBUS_PREBUILT_BASE,
+        "150.4.0-nimbus.1",
+        "src_binding_release_aarch64-apple-darwin.rs",
+      ),
+      "https://github.com/nimbus/rusty_v8/releases/download/\
+       v150.4.0-nimbus.1/src_binding_release_aarch64-apple-darwin.rs"
+    );
   }
 
   #[test]
@@ -1558,5 +1578,14 @@ edge [fontsize=10]
       )
       .is_ok()
     );
+
+    for name in [
+      prebuilt_archive_name("aarch64-apple-darwin", "debug", ""),
+      prebuilt_binding_name("aarch64-apple-darwin", "debug", ""),
+    ] {
+      let error = name.unwrap_err();
+      assert!(error.contains("profile debug"));
+      assert!(error.contains("V8_FROM_SOURCE=1"));
+    }
   }
 }

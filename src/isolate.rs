@@ -2665,7 +2665,9 @@ impl SendableUnenteredIsolate {
   /// The caller must ensure that every value reachable from the isolate is
   /// safe to access and drop on every destination thread. This includes
   /// create-parameter allocations, embedder slots, finalizer closures, weak
-  /// handles, and any external aliases. The caller must preserve this
+  /// handles, and any external aliases. No [`Global`](crate::Global),
+  /// [`Weak`](crate::Weak), or other persistent handle may remain on another
+  /// thread while the wrapper is transferred. The caller must preserve this
   /// invariant for the wrapper's complete lifetime, including state installed
   /// through a later [`Locker`]. A live [`Locker`] must never cross threads.
   pub unsafe fn new_unchecked(isolate: UnenteredIsolate) -> Self {

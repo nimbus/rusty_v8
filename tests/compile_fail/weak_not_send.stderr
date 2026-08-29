@@ -1,0 +1,39 @@
+error[E0277]: `NonNull<Value>` cannot be sent between threads safely
+ --> tests/compile_fail/weak_not_send.rs:6:17
+  |
+6 |   assert_send::<v8::Weak<v8::Value>>();
+  |                 ^^^^^^^^^^^^^^^^^^^ `NonNull<Value>` cannot be sent between threads safely
+  |
+  = help: within `Option<NonNull<Value>>`, the trait `Send` is not implemented for `NonNull<Value>`
+note: required because it appears within the type `Option<NonNull<Value>>`
+ --> $RUST/core/src/option.rs
+  |
+  | pub enum Option<T> {
+  |          ^^^^^^
+  = note: required for `Cell<Option<NonNull<Value>>>` to implement `Send`
+note: required because it appears within the type `v8::handle::WeakData<Value>`
+ --> src/handle.rs
+  |
+  | pub struct WeakData<T> {
+  |            ^^^^^^^^
+  = note: required for `Unique<v8::handle::WeakData<Value>>` to implement `Send`
+note: required because it appears within the type `Box<v8::handle::WeakData<Value>>`
+ --> $RUST/alloc/src/boxed.rs
+  |
+  | pub struct Box<
+  |            ^^^
+note: required because it appears within the type `Option<Box<v8::handle::WeakData<Value>>>`
+ --> $RUST/core/src/option.rs
+  |
+  | pub enum Option<T> {
+  |          ^^^^^^
+note: required because it appears within the type `v8::Weak<Value>`
+ --> src/handle.rs
+  |
+  | pub struct Weak<T> {
+  |            ^^^^
+note: required by a bound in `assert_send`
+ --> tests/compile_fail/weak_not_send.rs:9:19
+  |
+9 | fn assert_send<T: Send>() {}
+  |                   ^^^^ required by this bound in `assert_send`
