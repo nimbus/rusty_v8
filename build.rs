@@ -859,9 +859,7 @@ enum ChecksumPolicy {
 }
 
 fn download_file(url: &str, filename: &Path, checksum: ChecksumPolicy) {
-  if checksum == ChecksumPolicy::Required
-    && cached_download_matches(url, filename, checksum)
-  {
+  if cached_download_is_reusable(url, filename, checksum) {
     return;
   }
 
@@ -912,6 +910,17 @@ fn download_file(url: &str, filename: &Path, checksum: ChecksumPolicy) {
   assert!(static_checksum_path(filename).exists());
   assert!(!asset_tmp.exists());
   assert!(!sidecar_tmp.exists());
+}
+
+fn cached_download_is_reusable(
+  url: &str,
+  filename: &Path,
+  checksum: ChecksumPolicy,
+) -> bool {
+  // Caller-trusted local paths are mutable build inputs, so always recopy
+  // them. Remote custom archives retain the historical URL-keyed cache.
+  (checksum == ChecksumPolicy::Required || is_http_url(url))
+    && cached_download_matches(url, filename, checksum)
 }
 
 fn cached_download_matches(
@@ -998,7 +1007,7 @@ fn sha256_file(path: &Path) -> io::Result<String> {
 }
 
 fn download_to_path(url: &str, destination: &Path) {
-  if !url.starts_with("http:") && !url.starts_with("https:") {
+  if !is_http_url(url) {
     copy_file_contents(Path::new(url), destination);
     return;
   }
@@ -1086,16 +1095,17 @@ fn download_to_path(url: &str, destination: &Path) {
 }
 
 fn download_checksum_sidecar(url: &str, destination: &Path) {
-  if !url.starts_with("http:")
-    && !url.starts_with("https:")
-    && !Path::new(url).is_file()
-  {
+  if !is_http_url(url) && !Path::new(url).is_file() {
     panic!(
       "Nimbus V8 file mirror is missing the required checksum sidecar at \
        {url}; mirror each release asset together with its .sha256 file"
     );
   }
   download_to_path(url, destination);
+}
+
+fn is_http_url(url: &str) -> bool {
+  url.starts_with("http:") || url.starts_with("https:")
 }
 
 fn copy_file_contents(source: &Path, destination: &Path) {
@@ -1919,6 +1929,25 @@ edge [fontsize=10]
       fs::read(&trusted_output).unwrap(),
       b"caller-trusted-updated"
     );
+
+    let remote_url = "https://example.invalid/caller-trusted.a";
+    fs::write(&trusted_output, b"cached-remote").unwrap();
+    let cached_remote_digest = sha256_file(&trusted_output).unwrap();
+    fs::write(
+      static_checksum_path(&trusted_output),
+      format!("{remote_url}\ntrusted-custom-archive\n{cached_remote_digest}\n"),
+    )
+    .unwrap();
+    assert!(cached_download_is_reusable(
+      remote_url,
+      &trusted_output,
+      ChecksumPolicy::TrustedCustomArchive,
+    ));
+    assert!(!cached_download_is_reusable(
+      trusted_asset.to_str().unwrap(),
+      &trusted_output,
+      ChecksumPolicy::TrustedCustomArchive,
+    ));
 
     fs::remove_dir_all(root).unwrap();
   }

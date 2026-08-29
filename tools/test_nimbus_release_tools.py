@@ -116,10 +116,8 @@ class VerifierTests(unittest.TestCase):
             any("checksum mismatch" in item for item in self.failures())
         )
 
-    def test_write_checksums_and_flatten(self) -> None:
-        for sidecar in self.root.glob("*.sha256"):
-            sidecar.unlink()
-        failures, paths = verify_release_tree(self.root, write_checksums=True)
+    def test_flatten_verified_tree(self) -> None:
+        failures, paths = verify_release_tree(self.root)
         self.assertEqual(failures, [])
         output = self.root / "flattened"
         names = set(paths)
@@ -169,13 +167,23 @@ class PackagerTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(
-                set(files_by_name(output)), set(asset_names(target, "simdutf"))
+                set(files_by_name(output)),
+                set(asset_names(target, "simdutf"))
+                | {
+                    f"{name}.sha256"
+                    for name in asset_names(target, "simdutf")
+                },
             )
             archive_name, binding_name = asset_names(target, "simdutf")
             self.assertEqual(
                 gzip.decompress((output / archive_name).read_bytes()), b"library"
             )
             self.assertEqual((output / binding_name).read_bytes(), b"binding")
+            for name in (archive_name, binding_name):
+                self.assertEqual(
+                    (output / f"{name}.sha256").read_text(encoding="utf-8"),
+                    f"{sha256(output / name)}  {name}\n",
+                )
 
     def test_musl_pointer_compression_is_rejected(self) -> None:
         result = subprocess.run(

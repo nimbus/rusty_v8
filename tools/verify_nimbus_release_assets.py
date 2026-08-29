@@ -29,7 +29,7 @@ def files_by_name(directory: Path) -> dict[str, list[Path]]:
 
 
 def verify_release_tree(
-    directory: Path, *, write_checksums: bool = False
+    directory: Path,
 ) -> tuple[list[str], dict[str, list[Path]]]:
     assets = expected_assets()
     failures: list[str] = []
@@ -49,8 +49,6 @@ def verify_release_tree(
         digest = sha256(path)
         sidecar = path.with_name(f"{name}.sha256")
         expected_line = f"{digest}  {name}\n"
-        if write_checksums:
-            sidecar.write_text(expected_line, encoding="utf-8")
         if not sidecar.is_file():
             failures.append(f"missing checksum: {sidecar.name}")
         elif sidecar.read_text(encoding="utf-8") != expected_line:
@@ -96,11 +94,6 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("directory", type=Path)
     parser.add_argument(
-        "--write-checksums",
-        action="store_true",
-        help="write deterministic .sha256 sidecars before verification",
-    )
-    parser.add_argument(
         "--flatten-to",
         type=Path,
         help="copy a verified recursive artifact tree into an empty flat directory",
@@ -110,9 +103,7 @@ def main() -> int:
     directory: Path = args.directory
     assets = expected_assets()
     expected_names = set(assets) | {f"{name}.sha256" for name in assets}
-    failures, paths_by_name = verify_release_tree(
-        directory, write_checksums=args.write_checksums
-    )
+    failures, paths_by_name = verify_release_tree(directory)
 
     if failures:
         for failure in failures:

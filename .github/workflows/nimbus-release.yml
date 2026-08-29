@@ -247,10 +247,10 @@ jobs:
           path: release-artifacts
           pattern: nimbus-rusty-v8-*
 
-      - name: Generate checksums and verify exact asset contract
+      - name: Verify build checksums and exact asset contract
         run: >-
           python3 tools/verify_nimbus_release_assets.py release-artifacts
-          --write-checksums --flatten-to release-assets
+          --flatten-to release-assets
 
       - name: Publish release
         shell: bash
@@ -258,7 +258,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          if release_is_draft="$(gh release view "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json isDraft \
+            --jq .isDraft 2>/dev/null)"; then
+            if [[ "$release_is_draft" != "true" ]]; then
+              echo "Release $GITHUB_REF_NAME is already published; use a new Nimbus tag." >&2
+              exit 1
+            fi
+          else
             gh release create "$GITHUB_REF_NAME" \
               --repo "$GITHUB_REPOSITORY" \
               --title "$GITHUB_REF_NAME" \

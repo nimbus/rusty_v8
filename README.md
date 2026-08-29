@@ -143,8 +143,10 @@ cargo build
 ```
 
 This explicit override is caller-trusted and does not require a checksum
-sidecar. Nimbus release and mirror downloads require and verify the published
-`.sha256` sidecar before the build script uses an asset.
+sidecar. Local override files are recopied on each build-script run so rebuilt
+archives are visible. Remote override URLs retain the URL-keyed local cache.
+Nimbus release and mirror downloads require and verify the published `.sha256`
+sidecar before the build script uses an asset.
 
 ## Build V8 from Source
 
