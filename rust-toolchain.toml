@@ -1,6 +1,6 @@
 [toolchain]
 channel = "1.91.0"
-components = ["rustfmt", "clippy"]
+components = ["rustfmt", "clippy", "rust-src"]
 targets = [
     "x86_64-apple-darwin",
     "aarch64-apple-darwin",
