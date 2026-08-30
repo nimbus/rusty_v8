@@ -146,7 +146,8 @@ jobs:
           echo "deb http://apt.llvm.org/$VERSION_CODENAME/ llvm-toolchain-$VERSION_CODENAME-21 main" | sudo tee /etc/apt/sources.list.d/llvm-toolchain-21.list
           curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/llvm-snapshot.gpg >/dev/null
           sudo apt-get update
-          sudo apt-get install -y clang-21 clang-format-21 libclang-21-dev lld-21
+          sudo apt-get install -y \
+            clang-21 clang-format-21 libclang-21-dev libglib2.0-dev lld-21
           echo "LIBCLANG_PATH=/usr/lib/llvm-21/lib" >> "$GITHUB_ENV"
 
       - name: Install Clang 21 on macOS

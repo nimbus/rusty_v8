@@ -437,7 +437,9 @@ jobs:
           curl https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor | sudo dd of=/etc/apt/trusted.gpg.d/llvm-snapshot.gpg
           sudo apt-get update
           sudo apt-get -qq remove 'clang-*'
-          sudo apt-get install lld-21 clang-21 clang-tools-21 clang-tidy-21 clang-format-21 libclang-21-dev -y
+          sudo apt-get install \
+            lld-21 clang-21 clang-tools-21 clang-tidy-21 clang-format-21 \
+            libclang-21-dev libglib2.0-dev -y
           echo "LIBCLANG_PATH=/usr/lib/llvm-21/lib" >> "$GITHUB_ENV"
 
       - name: Install Clang 21 (macOS)
