@@ -918,11 +918,8 @@ fn download_file(url: &str, filename: &Path, checksum: ChecksumPolicy) {
       .unwrap_or_else(|error| {
         panic!("invalid checksum sidecar {sidecar_url}: {error}")
       });
-      let actual_digest = sha256_file(&asset_tmp).unwrap();
-      assert_eq!(
-        actual_digest, expected_digest,
-        "SHA-256 mismatch for V8 prebuilt asset {url}"
-      );
+      verify_required_asset_checksum(url, &asset_tmp, &expected_digest)
+        .unwrap_or_else(|error| panic!("{error}"));
       expected_digest
     }
     ChecksumPolicy::TrustedCustomArchive => "trusted-custom-archive".into(),
@@ -1040,6 +1037,20 @@ fn sha256_file(path: &Path) -> io::Result<String> {
   Ok(format!("{:x}", hasher.finalize()))
 }
 
+fn verify_required_asset_checksum(
+  url: &str,
+  path: &Path,
+  expected_digest: &str,
+) -> Result<(), String> {
+  let actual_digest = sha256_file(path).map_err(|error| {
+    format!("failed to calculate SHA-256 for V8 prebuilt asset {url}: {error}")
+  })?;
+  if actual_digest != expected_digest {
+    return Err(format!("SHA-256 mismatch for V8 prebuilt asset {url}"));
+  }
+  Ok(())
+}
+
 fn download_to_path(url: &str, destination: &Path) {
   if !is_http_url(url) {
     copy_file_contents(Path::new(url), destination);
@@ -1129,13 +1140,19 @@ fn download_to_path(url: &str, destination: &Path) {
 }
 
 fn download_checksum_sidecar(url: &str, destination: &Path) {
+  validate_checksum_sidecar_source(url)
+    .unwrap_or_else(|error| panic!("{error}"));
+  download_to_path(url, destination);
+}
+
+fn validate_checksum_sidecar_source(url: &str) -> Result<(), String> {
   if !is_http_url(url) && !Path::new(url).is_file() {
-    panic!(
+    return Err(format!(
       "Nimbus V8 file mirror is missing the required checksum sidecar at \
        {url}; mirror each release asset together with its .sha256 file"
-    );
+    ));
   }
-  download_to_path(url, destination);
+  Ok(())
 }
 
 fn is_http_url(url: &str) -> bool {
@@ -1722,14 +1739,6 @@ fn env_bool(key: &str) -> bool {
 mod test {
   use super::*;
 
-  fn panic_message(payload: &(dyn std::any::Any + Send)) -> &str {
-    payload
-      .downcast_ref::<String>()
-      .map(String::as_str)
-      .or_else(|| payload.downcast_ref::<&str>().copied())
-      .unwrap()
-  }
-
   const MOCK_GRAPH: &str = r#"
 digraph ninja {
 rankdir="LR"
@@ -2006,14 +2015,9 @@ edge [fontsize=10]
       std::process::id()
     ));
     assert!(!missing_sidecar_path.exists());
-    let missing_sidecar = std::panic::catch_unwind(|| {
-      download_checksum_sidecar(
-        missing_sidecar_path.to_str().unwrap(),
-        Path::new("unused"),
-      );
-    })
-    .unwrap_err();
-    let missing_sidecar = panic_message(missing_sidecar.as_ref());
+    let missing_sidecar =
+      validate_checksum_sidecar_source(missing_sidecar_path.to_str().unwrap())
+        .unwrap_err();
     assert!(missing_sidecar.contains("missing the required checksum sidecar"));
     assert!(missing_sidecar.contains("nimbus-v8-asset.a.sha256"));
 
@@ -2036,25 +2040,14 @@ edge [fontsize=10]
     assert_eq!(fs::read(&output).unwrap(), b"abc");
 
     let mismatch_asset = root.join("mismatch.bin");
-    let mismatch_output = root.join("mismatch-output.bin");
     fs::write(&mismatch_asset, b"substituted").unwrap();
-    fs::write(
-      root.join("mismatch.bin.sha256"),
-      format!("{DIGEST}  mismatch.bin\n"),
+    let mismatch = verify_required_asset_checksum(
+      mismatch_asset.to_str().unwrap(),
+      &mismatch_asset,
+      DIGEST,
     )
-    .unwrap();
-    let mismatch = std::panic::catch_unwind(|| {
-      download_file(
-        mismatch_asset.to_str().unwrap(),
-        &mismatch_output,
-        ChecksumPolicy::Required,
-      );
-    })
     .unwrap_err();
-    assert!(
-      panic_message(mismatch.as_ref())
-        .contains("SHA-256 mismatch for V8 prebuilt asset")
-    );
+    assert!(mismatch.contains("SHA-256 mismatch for V8 prebuilt asset"));
 
     // A modified output must not be accepted as a cache hit.
     fs::write(&output, b"tampered").unwrap();
