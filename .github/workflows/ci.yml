@@ -14,7 +14,9 @@ jobs:
   build:
     name: ${{ matrix.config.variant }} ${{ matrix.config.target }} ${{ matrix.config.v8_enable_pointer_compression && 'ptrcomp' || '' }} ${{ matrix.config.simdutf && 'simdutf' || '' }}
     runs-on: ${{ matrix.config.os }}
-    timeout-minutes: 180
+    # Public fork runners can need more than three hours for cold AArch64
+    # source builds. Keep the upstream limit unchanged on upstream runners.
+    timeout-minutes: ${{ github.repository == 'denoland/rusty_v8' && 180 || 360 }}
     strategy:
       # Always run main branch builds to completion. This allows the cache to
       # stay mostly up-to-date in situations where a single job fails due to
