@@ -55,6 +55,14 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(len(set(expected_assets())), 44)
         self.assertEqual(len(github_matrix()["include"]), 7)
 
+    def test_x86_64_linux_gnu_keeps_release_compatibility_floor(self) -> None:
+        config = next(
+            config
+            for config in TARGET_CONFIGS
+            if config.target == "x86_64-unknown-linux-gnu"
+        )
+        self.assertEqual(config.os, "ubuntu-22.04")
+
     def test_musl_names_and_no_pointer_compression(self) -> None:
         for target in (
             "x86_64-unknown-linux-musl",
@@ -99,7 +107,8 @@ class ManifestTests(unittest.TestCase):
             asset_names("mips64-unknown-linux-musl", "")
 
     def test_release_tag_must_match_crate_version(self) -> None:
-        self.assertEqual(release_revision(), "1")
+        self.assertEqual(release_revision(), "2")
+        validate_release_tag("v150.4.0-nimbus.2", "150.4.0", "2")
         validate_release_tag("v150.4.0-nimbus.1", "150.4.0", "1")
         validate_release_tag("v150.4.0-nimbus.27", "150.4.0", "27")
         for tag in (
