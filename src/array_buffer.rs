@@ -25,6 +25,10 @@ use crate::support::long;
 
 unsafe extern "C" {
   fn v8__ArrayBuffer__Allocator__NewDefaultAllocator() -> *mut Allocator;
+  fn v8__ArrayBuffer__Allocator__NewMaxAllocationSizeLimitedAllocator(
+    inner: *mut Allocator,
+    max_allocation_size: usize,
+  ) -> *mut Allocator;
   fn v8__ArrayBuffer__Allocator__DELETE(this: *mut Allocator);
   fn v8__ArrayBuffer__New__with_byte_length(
     isolate: *mut RealIsolate,
@@ -171,6 +175,36 @@ impl Shared for Allocator {
 pub fn new_default_allocator() -> UniqueRef<Allocator> {
   unsafe {
     UniqueRef::from_raw(v8__ArrayBuffer__Allocator__NewDefaultAllocator())
+  }
+}
+
+/// Wraps an allocator so that it reports a smaller maximum allocation size.
+///
+/// V8 reads the maximum allocation size before it allocates. A lowered maximum
+/// therefore makes an oversized `new ArrayBuffer(n)` throw a `RangeError` with
+/// the standard "Invalid array buffer length" message, and an oversized typed
+/// array constructor throw "Invalid typed array length", instead of failing at
+/// allocation time.
+///
+/// The limit only ever narrows. `max_allocation_size` is clamped against both
+/// the wrapped allocator and the hard ceiling of the current V8 build, so this
+/// cannot raise the maximum above what the build supports.
+///
+/// Use this to match the buffer ceiling of an older runtime. For example, a
+/// `max_allocation_size` of `1 << 32` reproduces the Node.js 20 ceiling on a
+/// build whose native ceiling is `2^53 - 1`.
+#[inline(always)]
+pub fn new_limited_allocator(
+  inner: UniqueRef<Allocator>,
+  max_allocation_size: usize,
+) -> UniqueRef<Allocator> {
+  unsafe {
+    UniqueRef::from_raw(
+      v8__ArrayBuffer__Allocator__NewMaxAllocationSizeLimitedAllocator(
+        inner.into_raw(),
+        max_allocation_size,
+      ),
+    )
   }
 }
 

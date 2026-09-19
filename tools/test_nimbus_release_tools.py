@@ -107,7 +107,8 @@ class ManifestTests(unittest.TestCase):
             asset_names("mips64-unknown-linux-musl", "")
 
     def test_release_tag_must_match_crate_version(self) -> None:
-        self.assertEqual(release_revision(), "2")
+        self.assertEqual(release_revision(), "3")
+        validate_release_tag("v150.4.0-nimbus.3", "150.4.0", "3")
         validate_release_tag("v150.4.0-nimbus.2", "150.4.0", "2")
         validate_release_tag("v150.4.0-nimbus.1", "150.4.0", "1")
         validate_release_tag("v150.4.0-nimbus.27", "150.4.0", "27")

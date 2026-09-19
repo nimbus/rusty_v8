@@ -968,6 +968,56 @@ fn array_buffer() {
 }
 
 #[test]
+fn limited_allocator_lowers_buffer_ceiling() {
+  // Reproduces the Node.js 20 buffer ceiling of 2^32 on a build whose native
+  // ceiling is 2^53 - 1.
+  const CEILING: usize = 1 << 32;
+  const OVER_CEILING: &str = "4294967297";
+
+  fn throw_message(scope: &mut v8::PinScope<'_, '_>, expr: &str) -> String {
+    let code = format!(
+      "(() => {{ try {{ {expr}; return 'did not throw'; }} \
+       catch (e) {{ return `${{e.constructor.name}}: ${{e.message}}`; }} }})()"
+    );
+    eval(scope, &code).unwrap().to_rust_string_lossy(scope)
+  }
+
+  let _setup_guard = setup::parallel_test();
+  let params = v8::Isolate::create_params().array_buffer_allocator(
+    // The outer limit is wider than the inner one. A wrapper only ever
+    // narrows, so the inner ceiling must still win.
+    v8::new_limited_allocator(
+      v8::new_limited_allocator(v8::new_default_allocator(), CEILING),
+      usize::MAX,
+    )
+    .make_shared(),
+  );
+  let isolate = &mut v8::Isolate::new(params);
+  v8::scope!(let scope, isolate);
+  let context = v8::Context::new(scope, Default::default());
+  let scope = &mut v8::ContextScope::new(scope, context);
+
+  assert_eq!(
+    throw_message(scope, &format!("new Uint8Array({OVER_CEILING})")),
+    format!("RangeError: Invalid typed array length: {OVER_CEILING}")
+  );
+  assert_eq!(
+    throw_message(scope, &format!("new Float64Array({OVER_CEILING})")),
+    format!("RangeError: Invalid typed array length: {OVER_CEILING}")
+  );
+  assert_eq!(
+    throw_message(scope, &format!("new ArrayBuffer({OVER_CEILING})")),
+    "RangeError: Invalid array buffer length"
+  );
+
+  // Allocations under the ceiling are unaffected.
+  let length = eval(scope, "new Uint8Array(8).length").unwrap();
+  assert_eq!(length.uint32_value(scope).unwrap(), 8);
+  let byte_length = eval(scope, "new ArrayBuffer(1024).byteLength").unwrap();
+  assert_eq!(byte_length.uint32_value(scope).unwrap(), 1024);
+}
+
+#[test]
 fn backing_store_segfault() {
   let _setup_guard = setup::parallel_test();
   let array_buffer_allocator = v8::new_default_allocator().make_shared();
