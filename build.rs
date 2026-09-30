@@ -297,6 +297,20 @@ fn build_v8(is_asan: bool) {
 
       if env::var("CARGO_FEATURE_V8_ENABLE_POINTER_COMPRESSION").is_ok() {
         opts.push("v8_enable_pointer_compression=true");
+        // Nimbus: multi-cage (per-isolate `v8::IsolateGroup`) is the DEFAULT on
+        // Linux. Each isolate gets a private pointer-compression cage + private
+        // read-only heap, which eliminates the concurrent-isolate-creation race
+        // on the default group's shared RO heap (SharedHeapDeserializer). macOS
+        // arm64 cannot build multi-cage (mksnapshot hits mprotect MAP_JIT /
+        // EACCES at platform-posix.cc), so it stays single (shared) cage; the
+        // consumer's `IsolateGroup::can_create_new_groups()` gate makes it fall
+        // back to the shared-cage isolate path there. Disabling the shared cage
+        // makes BUILD.gn auto-disable sandbox / static_roots / external_code_space
+        // (all already off for the no-sandbox build) and emit
+        // V8_COMPRESS_POINTERS_IN_MULTIPLE_CAGES.
+        if target_os == "linux" {
+          opts.push("v8_enable_pointer_compression_shared_cage=false");
+        }
       } else {
         opts.push("v8_enable_pointer_compression=false");
       }

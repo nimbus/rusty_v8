@@ -163,6 +163,29 @@ v8::Isolate* v8__Isolate__New(const v8::Isolate::CreateParams& params) {
   return v8::Isolate::New(params);
 }
 
+// --- IsolateGroup: per-isolate pointer-compression cage + private read-only
+// heap (Option 1 / workerd pattern). IsolateGroup is a refcounted single-pointer
+// value handle (copy ctor = Acquire, dtor = Release). Heap-box it so Rust owns a
+// stable pointer; `delete` drops exactly one ref. A live isolate retains the
+// group mapping (v8-isolate.h:212-214), so early handle drop would be safe; we
+// nonetheless hold the embedder handle until Isolate::Dispose for defense-in-depth.
+v8::IsolateGroup* v8__IsolateGroup__GetDefault() {
+  return new v8::IsolateGroup(v8::IsolateGroup::GetDefault());
+}
+v8::IsolateGroup* v8__IsolateGroup__Create() {
+  return new v8::IsolateGroup(v8::IsolateGroup::Create());
+}
+bool v8__IsolateGroup__CanCreateNewGroups() {
+  return v8::IsolateGroup::CanCreateNewGroups();
+}
+void v8__IsolateGroup__DELETE(v8::IsolateGroup* self) { delete self; }
+
+v8::Isolate* v8__Isolate__New__in_group(
+    const v8::IsolateGroup& group,
+    const v8::Isolate::CreateParams& params) {
+  return v8::Isolate::New(group, params);
+}
+
 void v8__Isolate__Dispose(v8::Isolate* isolate) { isolate->Dispose(); }
 
 void v8__Isolate__Enter(v8::Isolate* isolate) { isolate->Enter(); }

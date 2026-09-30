@@ -608,6 +608,10 @@ pub type UseCounterCallback =
 
 unsafe extern "C" {
   fn v8__Isolate__New(params: *const raw::CreateParams) -> *mut RealIsolate;
+  fn v8__Isolate__New__in_group(
+    group: *const crate::IsolateGroup,
+    params: *const raw::CreateParams,
+  ) -> *mut RealIsolate;
   fn v8__Isolate__Dispose(this: *mut RealIsolate);
   fn v8__Isolate__GetNumberOfDataSlots(this: *const RealIsolate) -> u32;
   fn v8__Isolate__GetData(
@@ -951,6 +955,29 @@ impl Isolate {
   #[allow(clippy::new_ret_no_self)]
   pub fn new(params: CreateParams) -> OwnedIsolate {
     OwnedIsolate::new(Self::new_impl(params))
+  }
+
+  /// Like `new`, but places the isolate in `group`'s private cage / RO heap.
+  /// `group` is borrowed; the caller retains its `UniqueRef<IsolateGroup>` for
+  /// the isolate's lifetime (drop after `Dispose`).
+  pub fn new_in_group(
+    group: &crate::IsolateGroup,
+    params: CreateParams,
+  ) -> OwnedIsolate {
+    OwnedIsolate::new(Self::new_in_group_impl(group, params))
+  }
+
+  fn new_in_group_impl(
+    group: &crate::IsolateGroup,
+    params: CreateParams,
+  ) -> *mut RealIsolate {
+    crate::V8::assert_initialized();
+    let (raw_create_params, create_param_allocations) = params.finalize();
+    let cxx_isolate =
+      unsafe { v8__Isolate__New__in_group(group, &raw_create_params) };
+    let mut isolate = unsafe { Isolate::from_raw_ptr(cxx_isolate) };
+    isolate.initialize(create_param_allocations);
+    cxx_isolate
   }
 
   /// Creates an isolate for use with `v8::Locker` in multi-threaded scenarios.
