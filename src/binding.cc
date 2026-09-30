@@ -2336,6 +2336,50 @@ class RustAllocator : public v8::ArrayBuffer::Allocator {
   }
 };
 
+// Forwards every allocation to an inner allocator, but reports a smaller
+// maximum allocation size. V8 reads that maximum before it allocates, so a
+// lowered value turns an oversized `new ArrayBuffer(n)` into a RangeError with
+// the standard "Invalid array buffer length" message, and an oversized typed
+// array constructor into "Invalid typed array length".
+//
+// The limit only ever narrows. It is clamped against both the inner allocator
+// and the hard V8 ceiling, so an embedder cannot raise the maximum beyond what
+// the build supports.
+class MaxAllocationSizeLimitedAllocator : public v8::ArrayBuffer::Allocator {
+ private:
+  std::unique_ptr<v8::ArrayBuffer::Allocator> inner;
+  size_t max_allocation_size;
+
+ public:
+  MaxAllocationSizeLimitedAllocator(v8::ArrayBuffer::Allocator* inner,
+                                    size_t max_allocation_size)
+      : inner(inner), max_allocation_size(max_allocation_size) {}
+
+  MaxAllocationSizeLimitedAllocator(
+      const MaxAllocationSizeLimitedAllocator& that) = delete;
+  MaxAllocationSizeLimitedAllocator(MaxAllocationSizeLimitedAllocator&& that) =
+      delete;
+  void operator=(const MaxAllocationSizeLimitedAllocator& that) = delete;
+  void operator=(MaxAllocationSizeLimitedAllocator&& that) = delete;
+
+  void* Allocate(size_t length) final { return inner->Allocate(length); }
+
+  void* AllocateUninitialized(size_t length) final {
+    return inner->AllocateUninitialized(length);
+  }
+
+  void Free(void* data, size_t length) final { inner->Free(data, length); }
+
+  size_t MaxAllocationSize() const final {
+    return std::min({max_allocation_size, inner->MaxAllocationSize(),
+                     v8::ArrayBuffer::kMaxByteLength});
+  }
+
+  v8::PageAllocator* GetPageAllocator() final {
+    return inner->GetPageAllocator();
+  }
+};
+
 v8::ArrayBuffer::Allocator* v8__ArrayBuffer__Allocator__NewDefaultAllocator() {
   return v8::ArrayBuffer::Allocator::NewDefaultAllocator();
 }
@@ -2353,6 +2397,12 @@ v8__ArrayBuffer__Allocator__NewDefaultAllocator__with_group(
   (void)group;
   return nullptr;
 #endif
+}
+
+v8::ArrayBuffer::Allocator*
+v8__ArrayBuffer__Allocator__NewMaxAllocationSizeLimitedAllocator(
+    v8::ArrayBuffer::Allocator* inner, size_t max_allocation_size) {
+  return new MaxAllocationSizeLimitedAllocator(inner, max_allocation_size);
 }
 
 v8::ArrayBuffer::Allocator* v8__ArrayBuffer__Allocator__NewRustAllocator(
